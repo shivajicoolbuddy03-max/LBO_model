@@ -1,0 +1,19 @@
+node_modules
+dist
+dist-ssr
+*.local
+.DS_Store
+
+# Android
+/android/.gradle
+/android/local.properties
+/android/app/build
+/android/build
+/android/.idea
+/android/captures
+*.iml
+
+# iOS
+/ios/App/Pods
+/ios/App/build
+/ios/App/App.xcworkspace

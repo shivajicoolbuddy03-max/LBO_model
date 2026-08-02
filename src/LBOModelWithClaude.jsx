@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
@@ -7,10 +7,33 @@ import {
   Search, Building2, Banknote, Target, Activity, ShieldAlert, LogOut,
   Loader2, CheckCircle2, Circle, AlertCircle, AlertTriangle, Download, Play,
   Info, Sliders, Zap, RotateCcw, FileSpreadsheet, ArrowRight, Check,
-  FileText, ExternalLink, BadgeCheck,
+  FileText, ExternalLink, BadgeCheck, KeyRound, PencilLine, X,
 } from "lucide-react";
 
 const API_MODEL = "claude-sonnet-4-6";
+
+/* ------------------------------------------------------------------ *
+ * API KEY STORE
+ * The app calls the Anthropic API directly from the device, so it needs
+ * the user's own key. Kept as a module-level value rather than React
+ * state so every plain function below (callOnce, callClaude) can read
+ * it without threading a prop through the whole agent pipeline. It is
+ * persisted only to on-device localStorage, never sent anywhere but
+ * api.anthropic.com.
+ * ------------------------------------------------------------------ */
+const API_KEY_STORAGE = "lbo_anthropic_api_key";
+let currentApiKey = "";
+function loadApiKey() {
+  try { currentApiKey = localStorage.getItem(API_KEY_STORAGE) || ""; } catch (e) { currentApiKey = ""; }
+  return currentApiKey;
+}
+function saveApiKey(key) {
+  currentApiKey = key || "";
+  try {
+    if (currentApiKey) localStorage.setItem(API_KEY_STORAGE, currentApiKey);
+    else localStorage.removeItem(API_KEY_STORAGE);
+  } catch (e) { /* localStorage unavailable, key still held in memory for this session */ }
+}
 
 /* ------------------------------------------------------------------ *
  * UI DESIGN TOKENS
@@ -265,13 +288,24 @@ function extractJson(text) {
 }
 
 async function callOnce(system, userContent, useWebSearch, maxTokens) {
+  if (!currentApiKey) throw new Error("No Anthropic API key is set. Add one from the key icon at the top of the page, or switch to Manual entry mode to build the model without one.");
   const body = { model: API_MODEL, max_tokens: maxTokens || 1000, system, messages: [{ role: "user", content: userContent }] };
   if (useWebSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
   const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": currentApiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify(body),
   });
   const data = await res.json();
-  if (data.error) throw new Error(data.error.message || "API error");
+  if (data.error) {
+    if (res.status === 401) throw new Error("The Anthropic API key was rejected. Check it in the key settings and try again.");
+    throw new Error(data.error.message || "API error");
+  }
   const blocks = (data.content || []).filter((b) => b.type === "text").map((b) => b.text || "");
   for (let i = blocks.length - 1; i >= 0; i--) {
     const parsed = extractJson(blocks[i]);
@@ -1609,7 +1643,7 @@ function Provenance({ research, agents }) {
     <Panel style={{ marginBottom: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <Eyebrow color={TEAL}>Sourcing and provenance</Eyebrow>
-        <span style={{ ...mono, fontSize: 10, color: FAINT }}>PRIMARY FILING \u00b7 NO VENDOR DATA</span>
+        <span style={{ ...mono, fontSize: 10, color: FAINT }}>PRIMARY FILING · NO VENDOR DATA</span>
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 12, paddingBottom: 12, borderBottom: `1px solid ${LINE}` }}>
         <FileText size={15} color={TEAL} style={{ flexShrink: 0, marginTop: 2 }} />
@@ -1618,7 +1652,7 @@ function Provenance({ research, agents }) {
             {research.filing_type}{research.filing_period && research.filing_period !== "\u2014" ? " \u00b7 " + research.filing_period : ""}
           </div>
           <div style={{ fontSize: 11.5, color: MUTED, marginTop: 3, lineHeight: 1.5 }}>
-            {research.exchange !== "\u2014" ? research.exchange + " \u00b7 " : ""}{research.currency} \u00b7 {research.source_note}
+            {research.exchange !== "—" ? research.exchange + " · " : ""}{research.currency} · {research.source_note}
           </div>
           {research.ebitda_basis && (
             <div style={{ fontSize: 11.5, color: FAINT, marginTop: 4, lineHeight: 1.5 }}>EBITDA basis: {research.ebitda_basis}</div>
@@ -1657,6 +1691,71 @@ function Provenance({ research, agents }) {
   );
 }
 
+function ApiKeyPanel({ hasKey, onSave, onClose }) {
+  const [draft, setDraft] = useState("");
+  const [revealed, setRevealed] = useState(false);
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 50,
+      display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "14vh 16px 16px",
+    }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: PANEL, border: `1px solid ${LINE}`, borderRadius: 12, padding: 20, width: "100%", maxWidth: 420,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <KeyRound size={16} color={AMBER} />
+            <span style={{ fontSize: 15, fontWeight: 700 }}>Anthropic API key</span>
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: MUTED, cursor: "pointer", padding: 4 }}>
+            <X size={16} />
+          </button>
+        </div>
+        <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.5, margin: "8px 0 14px" }}>
+          The AI research and structuring agents call the Anthropic API straight from this device, so they need your own key.
+          Stored only in this app's local storage, never sent anywhere but api.anthropic.com. Get one at{" "}
+          <span style={{ color: TEAL }}>console.anthropic.com</span>. No key at all is fine too — use Manual entry mode instead.
+        </div>
+        {hasKey && !revealed ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ flex: 1, background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "10px 12px", fontSize: 13, color: GREEN, ...mono }}>
+              <CheckCircle2 size={13} style={{ verticalAlign: -2, marginRight: 6 }} />Key saved on this device
+            </div>
+            <button onClick={() => setRevealed(true)} style={ghostBtn}>Change</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <input
+              type="password"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="sk-ant-…"
+              autoFocus
+              style={{ background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "10px 12px", color: TEXT, fontSize: 13, outline: "none", ...mono }}
+            />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              {hasKey && (
+                <button onClick={() => { onSave(""); setDraft(""); setRevealed(false); }} style={ghostBtn}>
+                  Remove key
+                </button>
+              )}
+              <button
+                onClick={() => { if (draft.trim()) { onSave(draft.trim()); setDraft(""); setRevealed(false); onClose(); } }}
+                disabled={!draft.trim()}
+                style={{
+                  background: draft.trim() ? AMBER : PANEL2, color: draft.trim() ? "#180D03" : MUTED, border: "none",
+                  borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: draft.trim() ? "pointer" : "default",
+                }}>
+                Save key
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * MAIN
  * ------------------------------------------------------------------ */
@@ -1677,7 +1776,13 @@ export default function LBOModelWithClaude() {
   const [showConventions, setShowConventions] = useState(false);
   const [fileUrl, setFileUrl] = useState(null);
   const [buildNote, setBuildNote] = useState(null);
+  const [hasKey, setHasKey] = useState(false);
+  const [showKeyPanel, setShowKeyPanel] = useState(false);
   const proposalRef = useRef(null);
+
+  useEffect(() => {
+    setHasKey(!!loadApiKey());
+  }, []);
 
   const running = phase === "running";
   const sym = research ? currencySymbol(research.currency) : "$";
@@ -1685,6 +1790,27 @@ export default function LBOModelWithClaude() {
   function setStat(k, s) { setStatus((p) => Object.assign({}, p, { [k]: s })); }
   function setLogLine(k, s) { setLog((p) => Object.assign({}, p, { [k]: s })); }
   function assemble(r, a1, a2, a3, a4) { return Object.assign({}, r, a1, a2, a3, a4, { hurdle_irr_pct: 0.2 }); }
+
+  function blankResearch(name) {
+    return normResearch({
+      company_name: name, ticker: "—", exchange: "—", sector: "—", currency: "USD",
+      fiscal_year_end: "—", filing_type: "Manual entry", filing_period: "—",
+      source_note: "All figures entered manually by the user, not sourced from a filing.",
+      ebitda_basis: "Entered manually.",
+    });
+  }
+
+  function startManual() {
+    if (!company.trim() || running) return;
+    setError(null); setBuildNote(null); setFileUrl(null); setShowAdjust(false);
+    setAgents({}); setModel(null); setRoutes(null); setStatus({}); setLog({});
+    const r = blankResearch(company.trim());
+    const proposed = Object.assign({}, r, houseDefaults(r), { hurdle_irr_pct: 0.2 });
+    proposalRef.current = proposed;
+    setResearch(r);
+    setAssumptions(proposed);
+    setPhase("review");
+  }
 
   function recompute(next, routeAssumptions) {
     const m = computeModel(next);
@@ -1696,6 +1822,10 @@ export default function LBOModelWithClaude() {
 
   async function run() {
     if (!company.trim() || running) return;
+    if (!hasKey) {
+      setError("Add your Anthropic API key (key icon, top right) to run AI research, or switch to Manual entry to build the model yourself with no key.");
+      return;
+    }
     setPhase("running"); setError(null); setBuildNote(null);
     setResearch(null); setAgents({}); setModel(null); setRoutes(null); setAssumptions(null);
     setFileUrl(null); setShowAdjust(false);
@@ -1745,12 +1875,24 @@ export default function LBOModelWithClaude() {
 
   async function finish(next, r) {
     let key = null;
+    let builtModel = null;
     try {
       setPhase("running");
       key = "compute1"; setStat(key, "running");
       const m = computeModel(next);
+      builtModel = m;
       setModel(m); setAssumptions(next); setStat(key, "done");
       setLogLine(key, `${fmtX(m.base.moic)} MOIC \u00b7 ${fmtPct(m.base.irr)} IRR`);
+
+      if (!currentApiKey) {
+        const a5 = normA5({});
+        const a6 = normA6({});
+        setAgents((p) => Object.assign({}, p, { a5, a6 }));
+        setRoutes(computeRoutes(m, next, a6));
+        setBuildNote("Built with no API key: risk analysis and exit-route commentary were skipped. Add a key to have Claude fill those in.");
+        setPhase("built");
+        return;
+      }
 
       key = "a5"; setStat(key, "running");
       const a5 = normA5(await callClaude(SYSTEM.a5, JSON.stringify({
@@ -1775,8 +1917,12 @@ export default function LBOModelWithClaude() {
     } catch (e) {
       if (key) setStat(key, "error");
       setError((e && e.message) || String(e));
-      setPhase(model ? "built" : "idle");
+      setPhase(builtModel ? "built" : "idle");
     }
+  }
+
+  function editResearch(patch) {
+    setResearch((r) => Object.assign({}, r, patch));
   }
 
   function edit(patch) {
@@ -1854,10 +2000,27 @@ export default function LBOModelWithClaude() {
               Six analysts, thirty years apiece, working the target's own regulatory filings. Structure the buyout, stress the credit, and export a formula-driven workbook in house format with every figure traced to its source.
             </p>
           </div>
-          <div style={{ border: `1px solid ${LINE}`, borderRadius: 20, padding: "6px 13px", ...mono, fontSize: 10, letterSpacing: 1, color: MUTED, whiteSpace: "nowrap" }}>
-            {"\u25cf LIVE \u00b7 MULTI-AGENT"}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ border: `1px solid ${LINE}`, borderRadius: 20, padding: "6px 13px", ...mono, fontSize: 10, letterSpacing: 1, color: MUTED, whiteSpace: "nowrap" }}>
+              {"\u25cf LIVE \u00b7 MULTI-AGENT"}
+            </div>
+            <button onClick={() => setShowKeyPanel(true)} title="Anthropic API key" style={{
+              display: "flex", alignItems: "center", gap: 6, background: hasKey ? AMBER_DIM : PANEL,
+              border: `1px solid ${hasKey ? AMBER : LINE}`, borderRadius: 20, padding: "6px 12px",
+              color: hasKey ? AMBER : MUTED, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+            }}>
+              <KeyRound size={13} /> {hasKey ? "Key set" : "Add key"}
+            </button>
           </div>
         </div>
+
+        {showKeyPanel && (
+          <ApiKeyPanel
+            hasKey={hasKey}
+            onSave={(k) => { saveApiKey(k); setHasKey(!!k); }}
+            onClose={() => setShowKeyPanel(false)}
+          />
+        )}
 
         {(phase === "idle" || phase === "running") && (
           <>
@@ -1865,6 +2028,7 @@ export default function LBOModelWithClaude() {
               {[
                 { id: "standard", title: "Standard logic", body: "The six analysts pull the filings and set every assumption themselves. Fastest route to a first read on the deal.", Icon: Zap },
                 { id: "custom", title: "My own criteria", body: "The analysts pull the filings and propose, then hand you the assumption sheet. Nothing is computed until you approve or overwrite it.", Icon: Sliders },
+                { id: "manual", title: "Manual entry", body: "Skip the AI agents entirely. Type in the target's financials and every assumption yourself. No API key needed.", Icon: PencilLine },
               ].map((opt) => {
                 const on = mode === opt.id;
                 return (
@@ -1888,19 +2052,19 @@ export default function LBOModelWithClaude() {
               <input
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && run()}
-                placeholder="Company name or ticker, e.g. Bharti Airtel"
+                onKeyDown={(e) => e.key === "Enter" && (mode === "manual" ? startManual() : run())}
+                placeholder={mode === "manual" ? "Company name, e.g. Bharti Airtel" : "Company name or ticker, e.g. Bharti Airtel"}
                 disabled={running}
                 style={{ flex: 1, minWidth: 230, background: PANEL, border: `1px solid ${LINE}`, borderRadius: 8, padding: "13px 15px", color: TEXT, fontSize: 14, outline: "none" }}
               />
-              <button onClick={run} disabled={running || !company.trim()}
+              <button onClick={() => (mode === "manual" ? startManual() : run())} disabled={running || !company.trim()}
                 style={{
                   display: "flex", alignItems: "center", gap: 8, background: running || !company.trim() ? PANEL2 : AMBER,
                   color: running || !company.trim() ? MUTED : "#180D03", border: "none", borderRadius: 8,
                   padding: "13px 22px", fontSize: 14, fontWeight: 700, cursor: running || !company.trim() ? "default" : "pointer",
                 }}>
                 {running ? <Loader2 size={16} className="spin" /> : <Play size={16} />}
-                {running ? "Working\u2026" : mode === "custom" ? "Research & propose" : "Run analysis"}
+                {running ? "Working\u2026" : mode === "custom" ? "Research & propose" : mode === "manual" ? "Set up the model" : "Run analysis"}
               </button>
             </div>
           </>
@@ -1945,21 +2109,49 @@ export default function LBOModelWithClaude() {
           <Panel style={{ marginBottom: 28, borderColor: AMBER }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap", marginBottom: 6 }}>
               <div>
-                <Eyebrow color={AMBER}>Step 2 of 2 \u00b7 your criteria</Eyebrow>
-                <div style={{ fontSize: 17, fontWeight: 700, marginTop: 6 }}>Review the assumptions before anything is computed</div>
+                <Eyebrow color={AMBER}>{mode === "manual" ? "Manual entry" : "Step 2 of 2 \u00b7 your criteria"}</Eyebrow>
+                <div style={{ fontSize: 17, fontWeight: 700, marginTop: 6 }}>
+                  {mode === "manual" ? "Enter the target's financials and every assumption" : "Review the assumptions before anything is computed"}
+                </div>
                 <div style={{ fontSize: 12.5, color: MUTED, marginTop: 4, maxWidth: 660, lineHeight: 1.55 }}>
-                  Reported financials come from {research.filing_type}{research.filing_period && research.filing_period !== "\u2014" ? ", " + research.filing_period : ""}. The structuring, credit, operating and exit assumptions below are analyst judgement. Overwrite anything you disagree with; every field becomes a blue input cell on the Assumptions sheet, with its source recorded alongside.
+                  {mode === "manual"
+                    ? "Nothing has been researched or assumed for you. Fill in the target financials below, adjust the house-default structuring, credit, operating and exit assumptions, then build the model. No API key required."
+                    : `Reported financials come from ${research.filing_type}${research.filing_period && research.filing_period !== "\u2014" ? ", " + research.filing_period : ""}. The structuring, credit, operating and exit assumptions below are analyst judgement. Overwrite anything you disagree with; every field becomes a blue input cell on the Assumptions sheet, with its source recorded alongside.`}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button onClick={() => setAssumptions(Object.assign({}, proposalRef.current))} style={ghostBtn}>
-                  <RotateCcw size={14} /> Agent proposal
-                </button>
+                {mode !== "manual" && (
+                  <button onClick={() => setAssumptions(Object.assign({}, proposalRef.current))} style={ghostBtn}>
+                    <RotateCcw size={14} /> Agent proposal
+                  </button>
+                )}
                 <button onClick={() => setAssumptions(Object.assign({}, assumptions, houseDefaults(research)))} style={ghostBtn}>
-                  House defaults
+                  {mode === "manual" ? <><RotateCcw size={14} /> Reset structuring defaults</> : "House defaults"}
                 </button>
               </div>
             </div>
+            {mode === "manual" && (
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 16, marginBottom: 4 }}>
+                <label style={{ flex: "1 1 220px" }}>
+                  <div style={{ fontSize: 11.5, color: MUTED, marginBottom: 5 }}>Company name</div>
+                  <input
+                    value={research.company_name}
+                    onChange={(e) => editResearch({ company_name: e.target.value || "Unknown" })}
+                    style={{ width: "100%", background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "9px 10px", color: TEXT, fontSize: 13, outline: "none" }}
+                  />
+                </label>
+                <label style={{ flex: "0 1 140px" }}>
+                  <div style={{ fontSize: 11.5, color: MUTED, marginBottom: 5 }}>Currency</div>
+                  <select
+                    value={research.currency}
+                    onChange={(e) => editResearch({ currency: e.target.value })}
+                    style={{ width: "100%", background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "9px 10px", color: TEXT, fontSize: 13, outline: "none" }}
+                  >
+                    {["USD", "INR", "EUR", "GBP", "JPY", "CNY", "AUD", "CAD"].map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+              </div>
+            )}
             <AssumptionEditor a={assumptions} sym={sym} onEdit={edit} />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
               <button onClick={() => finish(assumptions, research)} style={{
@@ -1981,7 +2173,7 @@ export default function LBOModelWithClaude() {
                   {research.company_name} <span style={{ color: MUTED, fontWeight: 400 }}>({research.ticker})</span>
                 </div>
                 <div style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>
-                  {research.sector} \u00b7 {assumptions.exit_year}-year hold \u00b7 {research.currency} figures in millions \u00b7 {mode === "custom" ? "analyst criteria" : "standard agent logic"}
+                  {research.sector} · {assumptions.exit_year}-year hold · {research.currency} figures in millions · {mode === "custom" ? "analyst criteria" : "standard agent logic"}
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -2097,7 +2289,7 @@ export default function LBOModelWithClaude() {
 
             <div className="g2" style={{ marginBottom: 18 }}>
               <Panel>
-                <Eyebrow>Revenue and EBITDA \u00b7 base case ({sym}mm)</Eyebrow>
+                <Eyebrow>Revenue and EBITDA · base case ({sym}mm)</Eyebrow>
                 <ResponsiveContainer width="100%" height={196}>
                   <LineChart data={opData} margin={{ top: 14, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid stroke={LINE} strokeDasharray="2 4" vertical={false} />
@@ -2110,7 +2302,7 @@ export default function LBOModelWithClaude() {
                 </ResponsiveContainer>
               </Panel>
               <Panel>
-                <Eyebrow color={TEAL}>Credit profile \u00b7 leverage and coverage</Eyebrow>
+                <Eyebrow color={TEAL}>Credit profile · leverage and coverage</Eyebrow>
                 <ResponsiveContainer width="100%" height={196}>
                   <LineChart data={creditData} margin={{ top: 14, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid stroke={LINE} strokeDasharray="2 4" vertical={false} />
@@ -2166,7 +2358,7 @@ export default function LBOModelWithClaude() {
             <Panel style={{ marginBottom: 18, overflowX: "auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
                 <div>
-                  <Eyebrow>Sponsor {sensMode} \u00b7 entry against exit multiple</Eyebrow>
+                  <Eyebrow>Sponsor {sensMode} · entry against exit multiple</Eyebrow>
                   <div style={{ fontSize: 11.5, color: FAINT, marginTop: 4 }}>The boxed cell is the live case.</div>
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -2297,7 +2489,8 @@ export default function LBOModelWithClaude() {
         .hero { font-size: 44px; }
         .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
         .g2c { display: grid; grid-template-columns: 1fr 1.15fr; gap: 14px; }
-        .modegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .modegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        @media (max-width: 900px) { .modegrid { grid-template-columns: 1fr 1fr; } }
         .kpigrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
         .pipegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(142px, 1fr)); gap: 9px; }
         .fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 12px; }
@@ -2345,15 +2538,15 @@ function AssumptionEditor({ a, sym, onEdit }) {
         <Field label="Minimum cash (% revenue)" value={a.min_cash_pct_revenue} onChange={set("min_cash_pct_revenue")} kind="pct" step={0.5} />
       </FieldGroup>
       <FieldGroup title="Operating cases">
-        <Field label="Revenue growth \u00b7 base" value={a.revenue_growth_base_pct} onChange={set("revenue_growth_base_pct")} kind="pct" />
-        <Field label="Revenue growth \u00b7 upside" value={a.revenue_growth_upside_pct} onChange={set("revenue_growth_upside_pct")} kind="pct" />
-        <Field label="Revenue growth \u00b7 downside" value={a.revenue_growth_downside_pct} onChange={set("revenue_growth_downside_pct")} kind="pct" />
-        <Field label="Exit margin \u00b7 base" value={a.exit_margin_base_pct} onChange={set("exit_margin_base_pct")} kind="pct" />
-        <Field label="Exit margin \u00b7 upside" value={a.exit_margin_upside_pct} onChange={set("exit_margin_upside_pct")} kind="pct" />
-        <Field label="Exit margin \u00b7 downside" value={a.exit_margin_downside_pct} onChange={set("exit_margin_downside_pct")} kind="pct" />
+        <Field label="Revenue growth · base" value={a.revenue_growth_base_pct} onChange={set("revenue_growth_base_pct")} kind="pct" />
+        <Field label="Revenue growth · upside" value={a.revenue_growth_upside_pct} onChange={set("revenue_growth_upside_pct")} kind="pct" />
+        <Field label="Revenue growth · downside" value={a.revenue_growth_downside_pct} onChange={set("revenue_growth_downside_pct")} kind="pct" />
+        <Field label="Exit margin · base" value={a.exit_margin_base_pct} onChange={set("exit_margin_base_pct")} kind="pct" />
+        <Field label="Exit margin · upside" value={a.exit_margin_upside_pct} onChange={set("exit_margin_upside_pct")} kind="pct" />
+        <Field label="Exit margin · downside" value={a.exit_margin_downside_pct} onChange={set("exit_margin_downside_pct")} kind="pct" />
         <Field label="Capex (% revenue)" value={a.capex_pct_revenue} onChange={set("capex_pct_revenue")} kind="pct" step={0.25} />
         <Field label="D&A (% revenue)" value={a.da_pct_revenue} onChange={set("da_pct_revenue")} kind="pct" step={0.25} />
-        <Field label="Working capital (% \u0394 revenue)" value={a.nwc_pct_delta_revenue} onChange={set("nwc_pct_delta_revenue")} kind="pct" />
+        <Field label="Working capital (% Δ revenue)" value={a.nwc_pct_delta_revenue} onChange={set("nwc_pct_delta_revenue")} kind="pct" />
         <Field label="Cash tax rate" value={a.tax_rate_pct} onChange={set("tax_rate_pct")} kind="pct" />
       </FieldGroup>
       <FieldGroup title="Exit and hurdle">
