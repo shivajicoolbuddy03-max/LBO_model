@@ -1,0 +1,12 @@
+{
+  "appId": "com.lbomodel.withclaude",
+  "appName": "LBO Model with Claude",
+  "webDir": "dist",
+  "backgroundColor": "#0B0C0F",
+  "android": {
+    "backgroundColor": "#0B0C0F"
+  },
+  "ios": {
+    "backgroundColor": "#0B0C0F"
+  }
+}

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">LBO Model with Claude</string>
+    <string name="title_activity_main">LBO Model with Claude</string>
+    <string name="package_name">com.lbomodel.withclaude</string>
+    <string name="custom_url_scheme">com.lbomodel.withclaude</string>
+</resources>
