@@ -1759,7 +1759,7 @@ function ApiKeyPanel({ hasKey, onSave, onClose }) {
 /* ------------------------------------------------------------------ *
  * MAIN
  * ------------------------------------------------------------------ */
-export default function LBOModelWithClaude() {
+export default function LBOModel() {
   const [company, setCompany] = useState("");
   const [mode, setMode] = useState("standard");
   const [phase, setPhase] = useState("idle");
@@ -1994,7 +1994,7 @@ export default function LBOModelWithClaude() {
           <div>
             <Eyebrow color={AMBER}>Leveraged buyout desk</Eyebrow>
             <h1 className="hero" style={{ ...serif, fontWeight: 700, margin: "8px 0 6px", lineHeight: 1.05, letterSpacing: -0.5 }}>
-              LBO Model <span style={{ color: AMBER, fontStyle: "italic" }}>with Claude</span>
+              LBO <span style={{ color: AMBER, fontStyle: "italic" }}>Model</span>
             </h1>
             <p style={{ color: MUTED, fontSize: 14.5, maxWidth: 580, margin: 0, lineHeight: 1.55 }}>
               Six analysts, thirty years apiece, working the target's own regulatory filings. Structure the buyout, stress the credit, and export a formula-driven workbook in house format with every figure traced to its source.

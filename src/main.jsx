@@ -1,10 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import LBOModelWithClaude from "./LBOModelWithClaude.jsx";
+import LBOModel from "./LBOModel.jsx";
 import "./index.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
-    <LBOModelWithClaude />
+    <LBOModel />
   </React.StrictMode>
 );

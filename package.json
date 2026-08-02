@@ -1,5 +1,5 @@
 {
-  "name": "lbo-model-with-claude",
+  "name": "lbo-model",
   "private": true,
   "version": "1.0.0",
   "type": "module",

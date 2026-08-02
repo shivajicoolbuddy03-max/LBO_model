@@ -1,6 +1,6 @@
 {
   "appId": "com.lbomodel.withclaude",
-  "appName": "LBO Model with Claude",
+  "appName": "LBO Model",
   "webDir": "dist",
   "backgroundColor": "#0B0C0F",
   "android": {

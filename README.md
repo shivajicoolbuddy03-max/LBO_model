@@ -1,4 +1,4 @@
-# LBO Model with Claude — mobile app
+# LBO Model
 
 A multi-agent Claude pipeline (research → structuring → debt → valuation →
 cash flow → risk → exit) that builds a leveraged buyout model and exports a
@@ -42,6 +42,23 @@ npm run dev        # dev server on http://localhost:5173
 npm run build       # production build to dist/
 ```
 
+## Deploying it as a website (GitHub Pages)
+
+`.github/workflows/deploy-pages.yml` builds the app and publishes `dist/`
+to GitHub Pages on every push to `main` or `claude/new-session-cfyhi0`, or
+on demand from the Actions tab (`workflow_dispatch`). It passes
+`--base=/<repo-name>/` to `vite build` so asset URLs resolve correctly under
+a project-pages subpath — that flag is CI-only; local `npm run build` and
+the Capacitor builds keep using root-relative paths, since Capacitor's
+WebView serves the app from its own virtual root, not a subpath.
+
+One manual, one-time step is required and can't be done from a workflow:
+in the repo's **Settings → Pages**, set **Source** to **GitHub Actions**.
+After that, the workflow deploys automatically on every push (or run it
+once by hand from the **Actions** tab → *Deploy to GitHub Pages* →
+*Run workflow*). The published URL will be
+`https://<owner>.github.io/<repo-name>/`.
+
 ## Building the Android app
 
 This was scaffolded with `npx cap add android` and committed, but the actual
@@ -84,6 +101,6 @@ simulator or device.
 ## App identity
 
 `capacitor.config.json` sets the app ID to `com.lbomodel.withclaude` and the
-display name to "LBO Model with Claude". Change `appId` before your first
-real build if you plan to publish it — the app ID can't be changed after a
-store listing is created.
+display name to "LBO Model". Change `appId` before your first real build if
+you plan to publish it — the app ID can't be changed after a store listing
+is created.
