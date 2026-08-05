@@ -385,7 +385,7 @@ function ApiKeyPanel({ hasKey, onSave, onClose }) {
               <button
                 onClick={() => { if (draft.trim()) { onSave(draft.trim()); setDraft(""); setRevealed(false); onClose(); } }}
                 disabled={!draft.trim()}
-                style={{ background: draft.trim() ? AMBER : PANEL2, color: draft.trim() ? "#180D03" : MUTED, border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: draft.trim() ? "pointer" : "default" }}>
+                style={{ background: draft.trim() ? AMBER : PANEL2, color: draft.trim() ? "#fff" : MUTED, border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: draft.trim() ? "pointer" : "default" }}>
                 Save key
               </button>
             </div>
@@ -729,7 +729,7 @@ export default function MergerModel() {
                 style={{ width: "100%", background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "9px 10px", color: TEXT, fontSize: 13, outline: "none" }} />
             </label>
             {fetchMode === "ai" && (
-              <button onClick={handleFetch} disabled={fetching} style={{ display: "flex", alignItems: "center", gap: 8, background: GOLD, color: "#241a02", border: "none", borderRadius: 8, padding: "11px 18px", fontSize: 13, fontWeight: 700, cursor: fetching ? "wait" : "pointer", opacity: fetching ? 0.6 : 1, whiteSpace: "nowrap" }}>
+              <button onClick={handleFetch} disabled={fetching} style={{ display: "flex", alignItems: "center", gap: 8, background: GOLD, color: "#fff", border: "none", borderRadius: 8, padding: "11px 18px", fontSize: 13, fontWeight: 700, cursor: fetching ? "wait" : "pointer", opacity: fetching ? 0.6 : 1, whiteSpace: "nowrap" }}>
                 {fetching ? <Loader2 size={14} className="spin" /> : <Wand2 size={14} />} {fetching ? "Fetching…" : "Fetch with AI"}
               </button>
             )}
@@ -765,7 +765,7 @@ export default function MergerModel() {
             <CompanyCard title={`${state.targetName} (Target)`} data={state.seller} onProfile={(k, v) => setProfile("seller", k, v)} onYear={(i, k, v) => setYearField("seller", i, k, v)} sellerExtra />
           </div>
           <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 22, flexWrap: "wrap" }}>
-            <button onClick={runAnalysis} style={{ display: "flex", alignItems: "center", gap: 8, background: AMBER, color: "#180D03", border: "none", borderRadius: 8, padding: "12px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={runAnalysis} style={{ display: "flex", alignItems: "center", gap: 8, background: AMBER, color: "#fff", border: "none", borderRadius: 8, padding: "12px 20px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
               <Play size={15} /> Run Analysis
             </button>
             <button onClick={resetExample} style={ghostBtn}><RotateCcw size={14} /> Reset to example</button>
@@ -803,7 +803,7 @@ export default function MergerModel() {
           <Eyebrow color={TEAL}>Pro forma income statement</Eyebrow>
           <div style={{ display: "flex", gap: 8, margin: "12px 0 14px", flexWrap: "wrap" }}>
             {[["buyer", ds.acquirerName], ["seller", ds.targetName], ["combined", "Combined"]].map(([id, label]) => (
-              <button key={id} onClick={() => setTab(id)} style={{ ...mono, fontSize: 11, padding: "6px 14px", borderRadius: 20, cursor: "pointer", background: tab === id ? AMBER : "transparent", color: tab === id ? "#180D03" : MUTED, border: `1px solid ${tab === id ? AMBER : LINE}` }}>
+              <button key={id} onClick={() => setTab(id)} style={{ ...mono, fontSize: 11, padding: "6px 14px", borderRadius: 20, cursor: "pointer", background: tab === id ? AMBER : "transparent", color: tab === id ? "#fff" : MUTED, border: `1px solid ${tab === id ? AMBER : LINE}` }}>
                 {label}
               </button>
             ))}
@@ -846,7 +846,7 @@ export default function MergerModel() {
         </Panel>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
-          <button onClick={handleExport} style={{ display: "flex", alignItems: "center", gap: 8, background: AMBER, color: "#180D03", border: "none", borderRadius: 8, padding: "11px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+          <button onClick={handleExport} style={{ display: "flex", alignItems: "center", gap: 8, background: AMBER, color: "#fff", border: "none", borderRadius: 8, padding: "11px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             <FileSpreadsheet size={15} /> Download styled Excel workbook
           </button>
         </div>

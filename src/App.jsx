@@ -22,7 +22,7 @@ export default function App() {
                 onClick={() => setTool(t.id)}
                 style={{
                   ...mono, fontSize: 12, fontWeight: 700, letterSpacing: 0.3, padding: "7px 16px", borderRadius: 20,
-                  cursor: "pointer", background: on ? AMBER : "transparent", color: on ? "#180D03" : MUTED,
+                  cursor: "pointer", background: on ? AMBER : "transparent", color: on ? "#fff" : MUTED,
                   border: `1px solid ${on ? AMBER : LINE}`,
                 }}
               >

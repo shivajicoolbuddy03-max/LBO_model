@@ -38,19 +38,19 @@ function saveApiKey(key) {
 /* ------------------------------------------------------------------ *
  * UI DESIGN TOKENS
  * ------------------------------------------------------------------ */
-const INK = "#0B0C0F";
-const PANEL = "#14161B";
-const PANEL2 = "#1B1E25";
-const LINE = "#262A33";
-const AMBER = "#E8823C";
-const AMBER_DIM = "rgba(232,130,60,0.13)";
-const TEAL = "#4CC9C0";
-const GREEN = "#5BD98A";
-const RED = "#F2645A";
-const GOLD = "#E5B94E";
-const TEXT = "#E9E6DF";
-const MUTED = "#8A8F9A";
-const FAINT = "#565C68";
+const INK = "#E6E7ED";
+const PANEL = "#ffffff";
+const PANEL2 = "#F6F2E7";
+const LINE = "#DACB9D";
+const AMBER = "#1E319E";
+const AMBER_DIM = "rgba(30,49,158,0.08)";
+const TEAL = "#6D7BC7";
+const GREEN = "#6D7BC7";
+const RED = "#9C3B3B";
+const GOLD = "#B89B47";
+const TEXT = "#1A1D2E";
+const MUTED = "#5B6178";
+const FAINT = "#8F93A3";
 
 const mono = { fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontVariantNumeric: "tabular-nums" };
 const serif = { fontFamily: "Georgia, 'Times New Roman', serif" };
@@ -1743,7 +1743,7 @@ function ApiKeyPanel({ hasKey, onSave, onClose }) {
                 onClick={() => { if (draft.trim()) { onSave(draft.trim()); setDraft(""); setRevealed(false); onClose(); } }}
                 disabled={!draft.trim()}
                 style={{
-                  background: draft.trim() ? AMBER : PANEL2, color: draft.trim() ? "#180D03" : MUTED, border: "none",
+                  background: draft.trim() ? AMBER : PANEL2, color: draft.trim() ? "#fff" : MUTED, border: "none",
                   borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: draft.trim() ? "pointer" : "default",
                 }}>
                 Save key
@@ -2060,7 +2060,7 @@ export default function LBOModel() {
               <button onClick={() => (mode === "manual" ? startManual() : run())} disabled={running || !company.trim()}
                 style={{
                   display: "flex", alignItems: "center", gap: 8, background: running || !company.trim() ? PANEL2 : AMBER,
-                  color: running || !company.trim() ? MUTED : "#180D03", border: "none", borderRadius: 8,
+                  color: running || !company.trim() ? MUTED : "#fff", border: "none", borderRadius: 8,
                   padding: "13px 22px", fontSize: 14, fontWeight: 700, cursor: running || !company.trim() ? "default" : "pointer",
                 }}>
                 {running ? <Loader2 size={16} className="spin" /> : <Play size={16} />}
@@ -2155,7 +2155,7 @@ export default function LBOModel() {
             <AssumptionEditor a={assumptions} sym={sym} onEdit={edit} />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
               <button onClick={() => finish(assumptions, research)} style={{
-                display: "flex", alignItems: "center", gap: 8, background: AMBER, color: "#180D03",
+                display: "flex", alignItems: "center", gap: 8, background: AMBER, color: "#fff",
                 border: "none", borderRadius: 8, padding: "12px 22px", fontSize: 14, fontWeight: 700, cursor: "pointer",
               }}>
                 Build the model <ArrowRight size={15} />
@@ -2181,7 +2181,7 @@ export default function LBOModel() {
                   <Sliders size={14} /> {showAdjust ? "Hide assumptions" : "Adjust assumptions"}
                 </button>
                 <button onClick={exportWorkbook} style={{
-                  display: "flex", alignItems: "center", gap: 8, background: AMBER, color: "#180D03",
+                  display: "flex", alignItems: "center", gap: 8, background: AMBER, color: "#fff",
                   border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer",
                 }}>
                   <FileSpreadsheet size={15} /> Build workbook
