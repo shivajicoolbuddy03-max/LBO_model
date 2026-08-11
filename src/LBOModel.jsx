@@ -1587,16 +1587,36 @@ function Row({ label, value, bold, color, top }) {
     </div>
   );
 }
-function Field({ label, value, onChange, kind, hint, step }) {
+function InfoDot({ onClick, open }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={open ? "Hide description" : "What is this?"}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, borderRadius: "50%",
+        border: `1px solid ${open ? AMBER : FAINT}`, background: open ? AMBER : "transparent", color: open ? "#fff" : FAINT,
+        fontSize: 9, fontWeight: 700, lineHeight: 1, cursor: "pointer", padding: 0, flexShrink: 0, fontFamily: "Georgia, 'Times New Roman', serif",
+      }}
+    >
+      i
+    </button>
+  );
+}
+function Field({ label, value, onChange, kind, hint, step, help }) {
   const toDisplay = (v) => (kind === "pct" ? Math.round(v * 10000) / 100 : v);
   const fromDisplay = (v) => (kind === "pct" ? v / 100 : v);
   const [draft, setDraft] = useState(String(toDisplay(value)));
   const [focused, setFocused] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   if (!focused && String(toDisplay(value)) !== draft) setDraft(String(toDisplay(value)));
   const suffix = kind === "pct" ? "%" : kind === "x" ? "x" : kind === "mm" ? "mm" : "";
   return (
     <label style={{ display: "block" }}>
-      <div style={{ fontSize: 11.5, color: MUTED, marginBottom: 5, lineHeight: 1.3 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        <div style={{ fontSize: 11.5, color: MUTED, lineHeight: 1.3 }}>{label}</div>
+        {help && <InfoDot open={showHelp} onClick={(e) => { e.preventDefault(); setShowHelp((v) => !v); }} />}
+      </div>
       <div style={{ display: "flex", alignItems: "center", background: INK, border: `1px solid ${LINE}`, borderRadius: 7 }}>
         <input
           type="number"
@@ -1609,6 +1629,7 @@ function Field({ label, value, onChange, kind, hint, step }) {
         />
         {suffix && <span style={{ ...mono, fontSize: 11, color: FAINT, paddingRight: 10 }}>{suffix}</span>}
       </div>
+      {help && showHelp && <div style={{ fontSize: 10.5, color: FAINT, marginTop: 5, lineHeight: 1.45 }}>{help}</div>}
       {hint && <div style={{ fontSize: 10.5, color: FAINT, marginTop: 4 }}>{hint}</div>}
     </label>
   );
@@ -2508,52 +2529,88 @@ export default function LBOModel() {
   );
 }
 
+const ASSUMPTION_HELP = {
+  ltm_revenue_mm: "Last-twelve-months revenue for the target, from its own filings — the base the growth cases roll forward from.",
+  ltm_ebitda_mm: "Last-twelve-months EBITDA — sets the entry margin and, with the entry multiple, the purchase enterprise value.",
+  net_debt_mm: "Target's total debt less cash at close; refinanced as part of the deal and used to bridge enterprise value to equity value.",
+  market_cap_mm: "Target's current public market capitalization, shown for reference against the buyout's implied equity value.",
+  current_ev_ebitda_x: "Target's current trading EV/EBITDA multiple, shown for reference against the entry multiple being paid.",
+  entry_multiple_x: "EV/EBITDA multiple paid for the target; entry EBITDA × this multiple sets the purchase enterprise value.",
+  txn_fee_pct: "Advisory and legal fees on the deal, as a % of enterprise value; funded at close and expensed, not capitalized.",
+  financing_fee_pct: "Fees to arrange the debt financing, as a % of enterprise value; capitalized and amortized straight-line over 7 years.",
+  mgmt_rollover_pct: "Portion of the purchase equity that management rolls over instead of cashing out — reduces the sponsor's cash equity cheque.",
+  term_loan_leverage_x: "Term loan sized as a multiple of entry EBITDA; amortizes each year and is the first tranche swept with excess cash.",
+  term_loan_rate_pct: "Interest rate on the term loan, accrued on its opening balance each year.",
+  term_loan_amort_pct: "Mandatory annual paydown of the term loan, as a % of its original principal.",
+  senior_notes_leverage_x: "Senior notes sized as a multiple of entry EBITDA; a bullet tranche with no scheduled amortization.",
+  senior_notes_rate_pct: "Coupon on the senior notes, accrued on their opening balance each year.",
+  revolver_size_mm: "Maximum size of the revolving credit facility available to fund shortfalls in cash flow.",
+  revolver_rate_pct: "Interest rate charged on any drawn revolver balance.",
+  cash_sweep_pct: "Share of excess free cash flow, after mandatory debt service, used to pay down debt early — term loan first.",
+  cash_interest_rate_pct: "Interest earned on the company's cash balance above the minimum cash requirement.",
+  min_cash_pct_revenue: "Minimum cash balance the company must hold, as a % of revenue, before any excess is swept to debt paydown.",
+  revenue_growth_base_pct: "Annual revenue growth rate in the base case, held constant across the hold period.",
+  revenue_growth_upside_pct: "Annual revenue growth rate in the upside case.",
+  revenue_growth_downside_pct: "Annual revenue growth rate in the downside case — can run negative for a cyclical business.",
+  exit_margin_base_pct: "EBITDA margin in the exit year under the base case; margin ramps linearly from the LTM margin to this level.",
+  exit_margin_upside_pct: "EBITDA margin in the exit year under the upside case.",
+  exit_margin_downside_pct: "EBITDA margin in the exit year under the downside case.",
+  capex_pct_revenue: "Capital expenditure as a % of revenue each year, funded out of operating cash flow.",
+  da_pct_revenue: "Depreciation & amortization as a % of revenue — a non-cash charge that still shields taxable income.",
+  nwc_pct_delta_revenue: "Working capital investment required per dollar of incremental revenue each year.",
+  tax_rate_pct: "Cash tax rate applied to taxable income; losses carry forward and offset the first available future income.",
+  exit_year: "Number of years the sponsor holds the investment before exit, from 3 to 7.",
+  exit_ev_ebitda_x: "EV/EBITDA multiple assumed at exit; combined with exit-year EBITDA, sets the exit enterprise value.",
+  exit_fee_pct: "Fees paid on exit, as a % of exit enterprise value.",
+  hurdle_irr_pct: "Target / minimum IRR the deal is benchmarked against in the verdict banner.",
+};
 function AssumptionEditor({ a, sym, onEdit }) {
   const set = (k) => (v) => onEdit({ [k]: v });
+  const H = ASSUMPTION_HELP;
   return (
     <div style={{ marginTop: 16 }}>
       <FieldGroup title="Target financials">
-        <Field label={`LTM revenue (${sym}mm)`} value={a.ltm_revenue_mm} onChange={set("ltm_revenue_mm")} kind="mm" step={10} />
-        <Field label={`LTM EBITDA (${sym}mm)`} value={a.ltm_ebitda_mm} onChange={set("ltm_ebitda_mm")} kind="mm" step={10} />
-        <Field label={`Net debt (${sym}mm)`} value={a.net_debt_mm} onChange={set("net_debt_mm")} kind="mm" step={10} />
-        <Field label={`Market cap (${sym}mm)`} value={a.market_cap_mm} onChange={set("market_cap_mm")} kind="mm" step={10} />
-        <Field label="Current trading EV/EBITDA" value={a.current_ev_ebitda_x} onChange={set("current_ev_ebitda_x")} kind="x" />
+        <Field label={`LTM revenue (${sym}mm)`} value={a.ltm_revenue_mm} onChange={set("ltm_revenue_mm")} kind="mm" step={10} help={H.ltm_revenue_mm} />
+        <Field label={`LTM EBITDA (${sym}mm)`} value={a.ltm_ebitda_mm} onChange={set("ltm_ebitda_mm")} kind="mm" step={10} help={H.ltm_ebitda_mm} />
+        <Field label={`Net debt (${sym}mm)`} value={a.net_debt_mm} onChange={set("net_debt_mm")} kind="mm" step={10} help={H.net_debt_mm} />
+        <Field label={`Market cap (${sym}mm)`} value={a.market_cap_mm} onChange={set("market_cap_mm")} kind="mm" step={10} help={H.market_cap_mm} />
+        <Field label="Current trading EV/EBITDA" value={a.current_ev_ebitda_x} onChange={set("current_ev_ebitda_x")} kind="x" help={H.current_ev_ebitda_x} />
       </FieldGroup>
       <FieldGroup title="Transaction structure">
-        <Field label="Entry EV/EBITDA" value={a.entry_multiple_x} onChange={set("entry_multiple_x")} kind="x" />
-        <Field label="Transaction fees" value={a.txn_fee_pct} onChange={set("txn_fee_pct")} kind="pct" step={0.25} />
-        <Field label="Financing fees" value={a.financing_fee_pct} onChange={set("financing_fee_pct")} kind="pct" step={0.25} />
-        <Field label="Management rollover" value={a.mgmt_rollover_pct} onChange={set("mgmt_rollover_pct")} kind="pct" />
+        <Field label="Entry EV/EBITDA" value={a.entry_multiple_x} onChange={set("entry_multiple_x")} kind="x" help={H.entry_multiple_x} />
+        <Field label="Transaction fees" value={a.txn_fee_pct} onChange={set("txn_fee_pct")} kind="pct" step={0.25} help={H.txn_fee_pct} />
+        <Field label="Financing fees" value={a.financing_fee_pct} onChange={set("financing_fee_pct")} kind="pct" step={0.25} help={H.financing_fee_pct} />
+        <Field label="Management rollover" value={a.mgmt_rollover_pct} onChange={set("mgmt_rollover_pct")} kind="pct" help={H.mgmt_rollover_pct} />
       </FieldGroup>
       <FieldGroup title="Capital structure">
-        <Field label="Term loan leverage" value={a.term_loan_leverage_x} onChange={set("term_loan_leverage_x")} kind="x" />
-        <Field label="Term loan rate" value={a.term_loan_rate_pct} onChange={set("term_loan_rate_pct")} kind="pct" step={0.25} />
-        <Field label="Term loan amortisation" value={a.term_loan_amort_pct} onChange={set("term_loan_amort_pct")} kind="pct" step={0.5} />
-        <Field label="Senior notes leverage" value={a.senior_notes_leverage_x} onChange={set("senior_notes_leverage_x")} kind="x" />
-        <Field label="Senior notes coupon" value={a.senior_notes_rate_pct} onChange={set("senior_notes_rate_pct")} kind="pct" step={0.25} />
-        <Field label={`Revolver commitment (${sym}mm)`} value={a.revolver_size_mm} onChange={set("revolver_size_mm")} kind="mm" step={10} />
-        <Field label="Revolver rate" value={a.revolver_rate_pct} onChange={set("revolver_rate_pct")} kind="pct" step={0.25} />
-        <Field label="Cash sweep" value={a.cash_sweep_pct} onChange={set("cash_sweep_pct")} kind="pct" step={5} />
-        <Field label="Interest on cash" value={a.cash_interest_rate_pct} onChange={set("cash_interest_rate_pct")} kind="pct" step={0.25} />
-        <Field label="Minimum cash (% revenue)" value={a.min_cash_pct_revenue} onChange={set("min_cash_pct_revenue")} kind="pct" step={0.5} />
+        <Field label="Term loan leverage" value={a.term_loan_leverage_x} onChange={set("term_loan_leverage_x")} kind="x" help={H.term_loan_leverage_x} />
+        <Field label="Term loan rate" value={a.term_loan_rate_pct} onChange={set("term_loan_rate_pct")} kind="pct" step={0.25} help={H.term_loan_rate_pct} />
+        <Field label="Term loan amortisation" value={a.term_loan_amort_pct} onChange={set("term_loan_amort_pct")} kind="pct" step={0.5} help={H.term_loan_amort_pct} />
+        <Field label="Senior notes leverage" value={a.senior_notes_leverage_x} onChange={set("senior_notes_leverage_x")} kind="x" help={H.senior_notes_leverage_x} />
+        <Field label="Senior notes coupon" value={a.senior_notes_rate_pct} onChange={set("senior_notes_rate_pct")} kind="pct" step={0.25} help={H.senior_notes_rate_pct} />
+        <Field label={`Revolver commitment (${sym}mm)`} value={a.revolver_size_mm} onChange={set("revolver_size_mm")} kind="mm" step={10} help={H.revolver_size_mm} />
+        <Field label="Revolver rate" value={a.revolver_rate_pct} onChange={set("revolver_rate_pct")} kind="pct" step={0.25} help={H.revolver_rate_pct} />
+        <Field label="Cash sweep" value={a.cash_sweep_pct} onChange={set("cash_sweep_pct")} kind="pct" step={5} help={H.cash_sweep_pct} />
+        <Field label="Interest on cash" value={a.cash_interest_rate_pct} onChange={set("cash_interest_rate_pct")} kind="pct" step={0.25} help={H.cash_interest_rate_pct} />
+        <Field label="Minimum cash (% revenue)" value={a.min_cash_pct_revenue} onChange={set("min_cash_pct_revenue")} kind="pct" step={0.5} help={H.min_cash_pct_revenue} />
       </FieldGroup>
       <FieldGroup title="Operating cases">
-        <Field label="Revenue growth · base" value={a.revenue_growth_base_pct} onChange={set("revenue_growth_base_pct")} kind="pct" />
-        <Field label="Revenue growth · upside" value={a.revenue_growth_upside_pct} onChange={set("revenue_growth_upside_pct")} kind="pct" />
-        <Field label="Revenue growth · downside" value={a.revenue_growth_downside_pct} onChange={set("revenue_growth_downside_pct")} kind="pct" />
-        <Field label="Exit margin · base" value={a.exit_margin_base_pct} onChange={set("exit_margin_base_pct")} kind="pct" />
-        <Field label="Exit margin · upside" value={a.exit_margin_upside_pct} onChange={set("exit_margin_upside_pct")} kind="pct" />
-        <Field label="Exit margin · downside" value={a.exit_margin_downside_pct} onChange={set("exit_margin_downside_pct")} kind="pct" />
-        <Field label="Capex (% revenue)" value={a.capex_pct_revenue} onChange={set("capex_pct_revenue")} kind="pct" step={0.25} />
-        <Field label="D&A (% revenue)" value={a.da_pct_revenue} onChange={set("da_pct_revenue")} kind="pct" step={0.25} />
-        <Field label="Working capital (% Δ revenue)" value={a.nwc_pct_delta_revenue} onChange={set("nwc_pct_delta_revenue")} kind="pct" />
-        <Field label="Cash tax rate" value={a.tax_rate_pct} onChange={set("tax_rate_pct")} kind="pct" />
+        <Field label="Revenue growth · base" value={a.revenue_growth_base_pct} onChange={set("revenue_growth_base_pct")} kind="pct" help={H.revenue_growth_base_pct} />
+        <Field label="Revenue growth · upside" value={a.revenue_growth_upside_pct} onChange={set("revenue_growth_upside_pct")} kind="pct" help={H.revenue_growth_upside_pct} />
+        <Field label="Revenue growth · downside" value={a.revenue_growth_downside_pct} onChange={set("revenue_growth_downside_pct")} kind="pct" help={H.revenue_growth_downside_pct} />
+        <Field label="Exit margin · base" value={a.exit_margin_base_pct} onChange={set("exit_margin_base_pct")} kind="pct" help={H.exit_margin_base_pct} />
+        <Field label="Exit margin · upside" value={a.exit_margin_upside_pct} onChange={set("exit_margin_upside_pct")} kind="pct" help={H.exit_margin_upside_pct} />
+        <Field label="Exit margin · downside" value={a.exit_margin_downside_pct} onChange={set("exit_margin_downside_pct")} kind="pct" help={H.exit_margin_downside_pct} />
+        <Field label="Capex (% revenue)" value={a.capex_pct_revenue} onChange={set("capex_pct_revenue")} kind="pct" step={0.25} help={H.capex_pct_revenue} />
+        <Field label="D&A (% revenue)" value={a.da_pct_revenue} onChange={set("da_pct_revenue")} kind="pct" step={0.25} help={H.da_pct_revenue} />
+        <Field label="Working capital (% Δ revenue)" value={a.nwc_pct_delta_revenue} onChange={set("nwc_pct_delta_revenue")} kind="pct" help={H.nwc_pct_delta_revenue} />
+        <Field label="Cash tax rate" value={a.tax_rate_pct} onChange={set("tax_rate_pct")} kind="pct" help={H.tax_rate_pct} />
       </FieldGroup>
       <FieldGroup title="Exit and hurdle">
-        <Field label="Hold period (years)" value={a.exit_year} onChange={(v) => onEdit({ exit_year: clamp(Math.round(v), 3, 7) })} step={1} />
-        <Field label="Exit EV/EBITDA" value={a.exit_ev_ebitda_x} onChange={set("exit_ev_ebitda_x")} kind="x" />
-        <Field label="Exit fees" value={a.exit_fee_pct} onChange={set("exit_fee_pct")} kind="pct" step={0.25} />
-        <Field label="Target IRR (hurdle)" value={a.hurdle_irr_pct} onChange={set("hurdle_irr_pct")} kind="pct" />
+        <Field label="Hold period (years)" value={a.exit_year} onChange={(v) => onEdit({ exit_year: clamp(Math.round(v), 3, 7) })} step={1} help={H.exit_year} />
+        <Field label="Exit EV/EBITDA" value={a.exit_ev_ebitda_x} onChange={set("exit_ev_ebitda_x")} kind="x" help={H.exit_ev_ebitda_x} />
+        <Field label="Exit fees" value={a.exit_fee_pct} onChange={set("exit_fee_pct")} kind="pct" step={0.25} help={H.exit_fee_pct} />
+        <Field label="Target IRR (hurdle)" value={a.hurdle_irr_pct} onChange={set("hurdle_irr_pct")} kind="pct" help={H.hurdle_irr_pct} />
       </FieldGroup>
     </div>
   );

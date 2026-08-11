@@ -24,40 +24,40 @@ const fEPS = (v) => "$" + (Number(v) || 0).toFixed(2);
  * FIELD DEFINITIONS
  * ------------------------------------------------------------------ */
 const assumptionDefs = [
-  { k: "offerPrice", label: "Offer Price / Share ($)" },
-  { k: "pctCash", label: "% Cash", pct: true },
-  { k: "pctDebt", label: "% Debt", pct: true },
-  { k: "pctStock", label: "% Stock", pct: true },
-  { k: "foregoneCashRate", label: "Foregone Cash Interest Rate", pct: true },
-  { k: "debtInterestRate", label: "Debt Interest Rate", pct: true },
-  { k: "revSynergyPct", label: "Revenue Synergy %", pct: true },
-  { k: "revSynergyCOGSPct", label: "Revenue Synergy COGS %", pct: true },
-  { k: "opexSynergyPct", label: "Cost Synergies % of OpEx", pct: true },
-  { k: "ppeWriteUpPct", label: "PP&E Write-Up %", pct: true },
-  { k: "deprPeriod", label: "Depreciation Period (yrs)" },
-  { k: "pctAllocIntangibles", label: "% Allocated to Intangibles", pct: true },
-  { k: "amortPeriod", label: "Amortization Period (yrs)" },
-  { k: "dtlWriteDown", label: "Write-Down of Existing DTL ($mm)" },
+  { k: "offerPrice", label: "Offer Price / Share ($)", help: "Price per target share offered by the acquirer — drives the equity purchase price and the premium shown above." },
+  { k: "pctCash", label: "% Cash", pct: true, help: "Portion of the purchase price funded with acquirer cash on hand; foregone interest on this cash is charged against pro forma income." },
+  { k: "pctDebt", label: "% Debt", pct: true, help: "Portion of the purchase price funded with new acquirer debt, at the Debt Interest Rate below." },
+  { k: "pctStock", label: "% Stock", pct: true, help: "Portion of the purchase price paid in acquirer shares; new shares issued dilute the combined share count." },
+  { k: "foregoneCashRate", label: "Foregone Cash Interest Rate", pct: true, help: "Interest the acquirer stops earning on the cash it spends — deducted from pro forma pre-tax income." },
+  { k: "debtInterestRate", label: "Debt Interest Rate", pct: true, help: "Coupon on the new acquisition debt; the interest expense on this tranche reduces pro forma income." },
+  { k: "revSynergyPct", label: "Revenue Synergy %", pct: true, help: "Extra revenue expected from the combined company, as a % of the target's standalone revenue." },
+  { k: "revSynergyCOGSPct", label: "Revenue Synergy COGS %", pct: true, help: "Share of the revenue synergy that carries its own cost of goods sold — the rest flows straight to gross profit." },
+  { k: "opexSynergyPct", label: "Cost Synergies % of OpEx", pct: true, help: "Operating expense savings from the deal, as a % of the target's standalone opex." },
+  { k: "ppeWriteUpPct", label: "PP&E Write-Up %", pct: true, help: "Step-up applied to the target's net PP&E at close, which increases post-deal depreciation." },
+  { k: "deprPeriod", label: "Depreciation Period (yrs)", help: "Number of years the PP&E step-up is depreciated over." },
+  { k: "pctAllocIntangibles", label: "% Allocated to Intangibles", pct: true, help: "Share of the allocable purchase premium assigned to newly created intangible assets rather than goodwill." },
+  { k: "amortPeriod", label: "Amortization Period (yrs)", help: "Number of years the new intangibles are amortized over." },
+  { k: "dtlWriteDown", label: "Write-Down of Existing DTL ($mm)", help: "Write-down of the target's pre-existing deferred tax liability, netted against goodwill." },
 ];
 const profileDefs = [
-  { k: "sharePrice", label: "Share Price ($)" },
-  { k: "dilutedSharesMktCap", label: "Diluted Shares — Mkt Cap (000s)" },
-  { k: "dilutedSharesEPS", label: "Diluted Shares — EPS Calc (000s)" },
-  { k: "taxRate", label: "Tax Rate", pct: true },
+  { k: "sharePrice", label: "Share Price ($)", help: "Current market price per share, used with diluted shares to size market cap and (for the target) the offer premium." },
+  { k: "dilutedSharesMktCap", label: "Diluted Shares — Mkt Cap (000s)", help: "Fully diluted shares outstanding used to compute market/equity value, from the company's latest filing." },
+  { k: "dilutedSharesEPS", label: "Diluted Shares — EPS Calc (000s)", help: "Weighted-average diluted shares used in the EPS calculation, which can differ slightly from the mkt-cap share count." },
+  { k: "taxRate", label: "Tax Rate", pct: true, help: "Effective tax rate applied to this company's pre-tax income; the acquirer's rate is also used on the combined pro forma income statement." },
 ];
 const sellerOnlyDefs = [
-  { k: "bookValueEquity", label: "Book Value of Equity ($mm)" },
-  { k: "existingGoodwill", label: "Existing Goodwill ($mm)" },
-  { k: "netPPE", label: "Net PP&E ($mm)" },
+  { k: "bookValueEquity", label: "Book Value of Equity ($mm)", help: "Target's total stockholders'/shareholders' equity — subtracted from the purchase price to find the allocable premium." },
+  { k: "existingGoodwill", label: "Existing Goodwill ($mm)", help: "Goodwill already on the target's balance sheet; it's written off and re-created as part of the new goodwill calculation." },
+  { k: "netPPE", label: "Net PP&E ($mm)", help: "Target's net property, plant & equipment — the base the PP&E write-up percentage is applied to." },
 ];
 const isFieldDefs = [
-  { k: "revenue", label: "Revenue" },
-  { k: "cogs", label: "Cost of Goods Sold" },
-  { k: "opex", label: "Operating Expenses" },
-  { k: "deprPPE", label: "Depreciation of PP&E" },
-  { k: "amortIntangibles", label: "Amortization of Intangibles" },
-  { k: "sbc", label: "Stock-Based Compensation" },
-  { k: "interest", label: "Interest Income / (Expense)" },
+  { k: "revenue", label: "Revenue", help: "Total revenue for the period." },
+  { k: "cogs", label: "Cost of Goods Sold", help: "Direct cost of producing goods/services sold, subtracted from revenue for gross profit." },
+  { k: "opex", label: "Operating Expenses", help: "Operating expenses excluding depreciation, amortization and stock-based comp, which are broken out separately below." },
+  { k: "deprPPE", label: "Depreciation of PP&E", help: "Depreciation on existing property, plant & equipment." },
+  { k: "amortIntangibles", label: "Amortization of Intangibles", help: "Amortization of existing intangible assets, pre-deal." },
+  { k: "sbc", label: "Stock-Based Compensation", help: "Non-cash stock-based compensation expense." },
+  { k: "interest", label: "Interest Income / (Expense)", help: "Net interest income (positive) or expense (negative), before the deal's new financing." },
 ];
 
 /* ------------------------------------------------------------------ *
@@ -155,11 +155,29 @@ function KV({ k, v, indent, total }) {
   );
 }
 
-function NumField({ label, value, onChange, pct, bare, step }) {
+function InfoDot({ onClick, open }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={open ? "Hide description" : "What is this?"}
+      style={{
+        display: "inline-flex", alignItems: "center", justifyContent: "center", width: 14, height: 14, borderRadius: "50%",
+        border: `1px solid ${open ? AMBER : FAINT}`, background: open ? AMBER : "transparent", color: open ? "#fff" : FAINT,
+        fontSize: 9, fontWeight: 700, lineHeight: 1, cursor: "pointer", padding: 0, flexShrink: 0, fontFamily: "Georgia, 'Times New Roman', serif",
+      }}
+    >
+      i
+    </button>
+  );
+}
+
+function NumField({ label, value, onChange, pct, bare, step, help }) {
   const toDisplay = (v) => (pct ? Math.round((v || 0) * 100000) / 1000 : v);
   const fromDisplay = (v) => (pct ? v / 100 : v);
   const [draft, setDraft] = useState(String(toDisplay(value)));
   const [focused, setFocused] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   if (!focused && String(toDisplay(value)) !== draft) setDraft(String(toDisplay(value)));
   const box = (
     <div style={{ display: "flex", alignItems: "center", background: INK, border: `1px solid ${LINE}`, borderRadius: bare ? 6 : 7 }}>
@@ -178,22 +196,27 @@ function NumField({ label, value, onChange, pct, bare, step }) {
   if (bare) return box;
   return (
     <label style={{ display: "block" }}>
-      <div style={{ fontSize: 11, color: MUTED, marginBottom: 5, lineHeight: 1.3 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.3 }}>{label}</div>
+        {help && <InfoDot open={showHelp} onClick={(e) => { e.preventDefault(); setShowHelp((v) => !v); }} />}
+      </div>
       {box}
+      {help && showHelp && <div style={{ fontSize: 10.5, color: MUTED, marginTop: 5, lineHeight: 1.45 }}>{help}</div>}
     </label>
   );
 }
 
 function CompanyCard({ title, data, onProfile, onYear, sellerExtra }) {
+  const [openRow, setOpenRow] = useState(null);
   return (
     <div style={{ background: PANEL2, border: `1px solid ${LINE}`, borderRadius: 10, padding: 18 }}>
       <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: MUTED, marginBottom: 14, paddingBottom: 9, borderBottom: `1px solid ${LINE}`, ...mono }}>{title}</div>
       <div className="mm-grid3">
         {profileDefs.map((def) => (
-          <NumField key={def.k} label={def.label} pct={!!def.pct} value={data[def.k]} onChange={(v) => onProfile(def.k, v)} />
+          <NumField key={def.k} label={def.label} help={def.help} pct={!!def.pct} value={data[def.k]} onChange={(v) => onProfile(def.k, v)} />
         ))}
         {sellerExtra && sellerOnlyDefs.map((def) => (
-          <NumField key={def.k} label={def.label} value={data[def.k]} onChange={(v) => onProfile(def.k, v)} />
+          <NumField key={def.k} label={def.label} help={def.help} value={data[def.k]} onChange={(v) => onProfile(def.k, v)} />
         ))}
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, marginTop: 16 }}>
@@ -205,16 +228,33 @@ function CompanyCard({ title, data, onProfile, onYear, sellerExtra }) {
           </tr>
         </thead>
         <tbody>
-          {isFieldDefs.map((def) => (
-            <tr key={def.k}>
-              <td style={{ padding: "5px 4px", borderBottom: `1px solid ${LINE}`, color: MUTED, fontSize: 12 }}>{def.label}</td>
-              {[0, 1].map((i) => (
-                <td key={i} style={{ padding: "3px 2px", borderBottom: `1px solid ${LINE}` }}>
-                  <NumField bare value={data.years[i][def.k]} onChange={(v) => onYear(i, def.k, v)} />
-                </td>
-              ))}
-            </tr>
-          ))}
+          {isFieldDefs.map((def) => {
+            const open = openRow === def.k;
+            return (
+              <React.Fragment key={def.k}>
+                <tr>
+                  <td style={{ padding: "5px 4px", borderBottom: open ? "none" : `1px solid ${LINE}`, color: MUTED, fontSize: 12 }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      {def.label}
+                      {def.help && <InfoDot open={open} onClick={() => setOpenRow(open ? null : def.k)} />}
+                    </span>
+                  </td>
+                  {[0, 1].map((i) => (
+                    <td key={i} style={{ padding: "3px 2px", borderBottom: open ? "none" : `1px solid ${LINE}` }}>
+                      <NumField bare value={data.years[i][def.k]} onChange={(v) => onYear(i, def.k, v)} />
+                    </td>
+                  ))}
+                </tr>
+                {open && (
+                  <tr>
+                    <td colSpan={3} style={{ padding: "0 4px 8px", borderBottom: `1px solid ${LINE}` }}>
+                      <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.45 }}>{def.help}</div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -752,7 +792,7 @@ export default function MergerModel() {
           <div style={{ fontSize: 12.5, color: MUTED, margin: "6px 0 16px" }}>Consideration mix, financing terms, and purchase-accounting assumptions.</div>
           <div className="mm-grid4">
             {assumptionDefs.map((def) => (
-              <NumField key={def.k} label={def.label} pct={!!def.pct} value={state[def.k]} onChange={(v) => setAssumption(def.k, v)} />
+              <NumField key={def.k} label={def.label} help={def.help} pct={!!def.pct} value={state[def.k]} onChange={(v) => setAssumption(def.k, v)} />
             ))}
           </div>
         </Panel>
