@@ -26,9 +26,15 @@ export function zipStore(files) {
   let offset = 0;
   const w16 = (v) => [v & 0xFF, (v >>> 8) & 0xFF];
   const w32 = (v) => [v & 0xFF, (v >>> 8) & 0xFF, (v >>> 16) & 0xFF, (v >>> 24) & 0xFF];
+  // A zero DOS date/time (month=0, day=0) is invalid per the format and
+  // some strict zip readers refuse to open the archive over it — encode
+  // the real build time instead.
+  const now = new Date();
+  const dosTime = ((now.getHours() & 0x1F) << 11) | ((now.getMinutes() & 0x3F) << 5) | ((now.getSeconds() >> 1) & 0x1F);
+  const dosDate = (((now.getFullYear() - 1980) & 0x7F) << 9) | (((now.getMonth() + 1) & 0xF) << 5) | (now.getDate() & 0x1F);
   files.forEach((f) => {
     const name = utf8bytes(f.name), data = utf8bytes(f.data), crc = crc32(data);
-    const local = [].concat([0x50, 0x4B, 0x03, 0x04], w16(20), w16(0), w16(0), w16(0), w16(0),
+    const local = [].concat([0x50, 0x4B, 0x03, 0x04], w16(20), w16(0), w16(0), w16(dosTime), w16(dosDate),
       w32(crc), w32(data.length), w32(data.length), w16(name.length), w16(0));
     chunks.push(Uint8Array.from(local), name, data);
     central.push({ name, crc, size: data.length, offset });
@@ -36,7 +42,7 @@ export function zipStore(files) {
   });
   let cdSize = 0;
   central.forEach((c) => {
-    const rec = [].concat([0x50, 0x4B, 0x01, 0x02], w16(20), w16(20), w16(0), w16(0), w16(0), w16(0),
+    const rec = [].concat([0x50, 0x4B, 0x01, 0x02], w16(20), w16(20), w16(0), w16(0), w16(dosTime), w16(dosDate),
       w32(c.crc), w32(c.size), w32(c.size), w16(c.name.length), w16(0), w16(0), w16(0), w16(0), w32(0), w32(c.offset));
     chunks.push(Uint8Array.from(rec), c.name);
     cdSize += rec.length + c.name.length;
@@ -136,8 +142,13 @@ export function WSheet(name, opts) {
     },
     txt(c, r, v, s) { return this.put(c, r, { t: "s", v: v === undefined || v === null ? "" : String(v), s }); },
     num(c, r, v, s) { return this.put(c, r, { t: "n", v: isFinite(v) ? v : 0, s }); },
-    fml(c, r, f, v, s) { return this.put(c, r, { t: "n", f, v: isFinite(v) ? v : 0, s }); },
-    fmlStr(c, r, f, v, s) { return this.put(c, r, { t: "str", f, v: String(v), s }); },
+    // The <f> element must hold the formula WITHOUT a leading '=' per the
+    // OOXML spec — callers pass Excel-style "=A1+B1" strings for
+    // readability, so strip the leading sign here rather than at every
+    // call site (a stray leading '=' otherwise gets written literally
+    // into <f>, which corrupts the formula for strict readers).
+    fml(c, r, f, v, s) { return this.put(c, r, { t: "n", f: f.replace(/^=/, ""), v: isFinite(v) ? v : 0, s }); },
+    fmlStr(c, r, f, v, s) { return this.put(c, r, { t: "str", f: f.replace(/^=/, ""), v: String(v), s }); },
     blank(c, r, s) { return this.put(c, r, { t: "b", s }); },
     band(c0, c1, r, s) { for (let c = c0; c <= c1; c++) if (!(this.rows[r] && this.rows[r][c])) this.blank(c, r, s); return this; },
     merge(c0, r0, c1, r1) { this.merges.push(`${colName(c0)}${r0}:${colName(c1)}${r1}`); return this; },

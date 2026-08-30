@@ -9,7 +9,7 @@ import {
 import { loadApiKey, saveApiKey, getApiKey } from "./lib/apiKey.js";
 import { callClaude } from "./lib/anthropicClient.js";
 import { defaultMergerState, computeDeal } from "./lib/mergerCalc.js";
-import { StyleBook, WSheet, writeXlsx } from "./lib/xlsxWriter.js";
+import { StyleBook, WSheet, writeXlsx, colName } from "./lib/xlsxWriter.js";
 
 /* ------------------------------------------------------------------ *
  * FORMATTERS
@@ -63,10 +63,13 @@ const isFieldDefs = [
 /* ------------------------------------------------------------------ *
  * SENSITIVITY MATRIX (deterministic, no AI)
  * ------------------------------------------------------------------ */
+const PRICE_FACTORS = [1.4667, 1.4, 1.3333, 1.2667, 1.2, 1.1333, 1.0667, 1.0, 0.9333, 0.8667];
+const SYNERGY_LEVELS = [0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16];
+
 function buildSensitivity(s) {
-  const priceFactors = [1.4667, 1.4, 1.3333, 1.2667, 1.2, 1.1333, 1.0667, 1.0, 0.9333, 0.8667];
+  const priceFactors = PRICE_FACTORS;
   const priceLevels = priceFactors.map((f) => Math.round(s.offerPrice * f * 100) / 100);
-  const synergyLevels = [0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16];
+  const synergyLevels = SYNERGY_LEVELS;
   function buildMatrix(varyKey) {
     return priceLevels.map((price) => synergyLevels.map((syn) => {
       const s2 = Object.assign({}, s, { [varyKey]: syn });
@@ -442,9 +445,52 @@ function ApiKeyPanel({ hasKey, onSave, onClose }) {
  * ------------------------------------------------------------------ */
 const XP = { title: "1F4E78", banner: "2E5395", white: "FFFFFF", input: "0000FA", bad: "9C0006", posFill: "6D7BC7", negFill: "9C3B3B" };
 const USDFMT = '$#,##0.0;[Red]($#,##0.0)';
+const USD2FMT = '$#,##0.00;[Red]($#,##0.00)';
 const PCTFMT = "0.0%";
 const NUMFMT = "#,##0.0";
 const EPSFMT = "$#,##0.00";
+
+/* ------------------------------------------------------------------ *
+ * WORKBOOK ROW MAPS — fixed row numbers so every formula below can
+ * reference a known cell address. Mirrors LBOModel's AS/SU/DS pattern:
+ * every derived figure is a real Excel formula, not a pasted value.
+ * ------------------------------------------------------------------ */
+const AS = {
+  hdr: 1, offerPrice: 3, pctCash: 4, pctDebt: 5, pctStock: 6, foregoneCashRate: 7, debtInterestRate: 8,
+  revSynPct: 9, revSynCogsPct: 10, opexSynPct: 11, ppeWriteUpPct: 12, deprPeriod: 13, pctAllocIntangibles: 14,
+  amortPeriod: 15, dtlWriteDown: 16,
+};
+const SU = { hdr: 3, equityPP: 4, cashUsed: 5, debtIssued: 6, newShares: 7 };
+const GW = {
+  hdr: 18, equityPP: 19, lessBV: 20, plusGW: 21, totalPremium: 22,
+  lessPPE: 23, lessIntang: 24, lessDTL: 25, plusDTL: 26, totalGoodwill: 27,
+};
+const ACQ = {
+  hdr: 1, yrhdr: 2, sharePrice: 3, sharesMkt: 4, sharesEPS: 5, taxRate: 6, spacer1: 7,
+  revenue: 8, cogs: 9, gp: 10, opex: 11, deprPPE: 12, amort: 13, sbc: 14, oi: 15, interest: 16,
+  pretax: 17, tax: 18, ni: 19, spacer2: 20, eps: 21, shares: 22,
+};
+const TGT_START = ACQ.shares + 2;
+const TGT = {
+  hdr: TGT_START, yrhdr: TGT_START + 1, sharePrice: TGT_START + 2, sharesMkt: TGT_START + 3, sharesEPS: TGT_START + 4,
+  taxRate: TGT_START + 5, bookValue: TGT_START + 6, existingGW: TGT_START + 7, netPPE: TGT_START + 8, spacer1: TGT_START + 9,
+  revenue: TGT_START + 10, cogs: TGT_START + 11, gp: TGT_START + 12, opex: TGT_START + 13, deprPPE: TGT_START + 14,
+  amort: TGT_START + 15, sbc: TGT_START + 16, oi: TGT_START + 17, interest: TGT_START + 18, pretax: TGT_START + 19,
+  tax: TGT_START + 20, ni: TGT_START + 21, spacer2: TGT_START + 22, eps: TGT_START + 23, shares: TGT_START + 24,
+};
+const CMB_START = TGT.shares + 2;
+const CMB = {
+  hdr: CMB_START, yrhdr: CMB_START + 1, rev: CMB_START + 2, revSyn: CMB_START + 3, cogs: CMB_START + 4, revSynCogs: CMB_START + 5,
+  gp: CMB_START + 6, opex: CMB_START + 7, opexSyn: CMB_START + 8, deprPPE: CMB_START + 9, deprWriteUp: CMB_START + 10,
+  amort: CMB_START + 11, amortNew: CMB_START + 12, sbc: CMB_START + 13, oi: CMB_START + 14, interest: CMB_START + 15,
+  foregone: CMB_START + 16, newDebtInt: CMB_START + 17, pretax: CMB_START + 18, tax: CMB_START + 19, ni: CMB_START + 20,
+  spacer: CMB_START + 21, eps: CMB_START + 22, shares: CMB_START + 23, spacer2: CMB_START + 24, accretion: CMB_START + 25,
+};
+
+const AG_SHEET = "Assumptions & Goodwill";
+const IS_SHEET = "Income Statements";
+const AGref = (col, row) => `'${AG_SHEET}'!$${col}$${row}`;
+const ISref = (col, row) => `'${IS_SHEET}'!$${col}$${row}`;
 
 function buildMergerWorkbook(d) {
   const s = d.state, r = d.result, sens = d.sensitivity;
@@ -456,9 +502,12 @@ function buildMergerWorkbook(d) {
     lbl: SB.s({ font: {} }),
     lblB: SB.s({ font: { b: true } }),
     inputUSD: SB.s({ font: { color: XP.input }, numFmt: USDFMT }),
+    inputUSD2: SB.s({ font: { color: XP.input }, numFmt: USD2FMT }),
     inputPct: SB.s({ font: { color: XP.input }, numFmt: PCTFMT }),
     inputInt: SB.s({ font: { color: XP.input }, numFmt: "0" }),
+    inputNum: SB.s({ font: { color: XP.input }, numFmt: NUMFMT }),
     formUSD: SB.s({ numFmt: USDFMT }),
+    formUSDsub: SB.s({ font: { b: true }, numFmt: USDFMT }),
     formPct: SB.s({ numFmt: PCTFMT }),
     formNum: SB.s({ numFmt: NUMFMT }),
     formEPS: SB.s({ numFmt: EPSFMT }),
@@ -469,20 +518,195 @@ function buildMergerWorkbook(d) {
   const priceLbl = SB.s({ font: { b: true, color: XP.input }, numFmt: USDFMT });
   const heatCell = (v) => SB.s({ font: { b: true, color: XP.white }, fill: v >= 0 ? XP.posFill : XP.negFill, numFmt: "0.0%", align: { h: "center" } });
 
-  // ---------- Summary ----------
+  // twoCol writes the same formula shape into columns B (FY1) and C (FY2)
+  function twoCol(ws, row, tmpl, valB, valC, style) {
+    ws.fml(1, row, tmpl("B"), valB, style);
+    ws.fml(2, row, tmpl("C"), valC, style);
+  }
+  function bothCol(ws, row, fml, val, style) {
+    ws.fml(1, row, fml, val, style);
+    ws.fml(2, row, fml, val, style);
+  }
+
+  // ================= SHEET: Income Statements =================
+  // Built first (before Summary/Assumptions) so its row map is available
+  // for cross-sheet formulas below — the sheet order in the output
+  // array is set at the very end, independent of build order.
+  const ws3 = WSheet(IS_SHEET, { cols: [34, 16, 16] });
+
+  function profileRow(row, label, val, style) { ws3.txt(0, row, label, S.lbl); ws3.num(1, row, val, style); }
+  function inputRow(row, label, v0, v1) { ws3.txt(0, row, label, S.lbl); ws3.num(1, row, v0, S.inputUSD); ws3.num(2, row, v1, S.inputUSD); }
+
+  // Acquirer
+  ws3.txt(0, ACQ.hdr, `${s.acquirerName} (Acquirer)`, S.banner).band(0, 2, ACQ.hdr, S.banner).merge(0, ACQ.hdr, 2, ACQ.hdr);
+  ws3.txt(1, ACQ.yrhdr, s.buyer.years[0].label, S.lblB); ws3.txt(2, ACQ.yrhdr, s.buyer.years[1].label, S.lblB);
+  profileRow(ACQ.sharePrice, "Share Price ($)", s.buyer.sharePrice, S.inputUSD2);
+  profileRow(ACQ.sharesMkt, "Diluted Shares — Mkt Cap (000s)", s.buyer.dilutedSharesMktCap, S.inputNum);
+  profileRow(ACQ.sharesEPS, "Diluted Shares — EPS Calc (000s)", s.buyer.dilutedSharesEPS, S.inputNum);
+  profileRow(ACQ.taxRate, "Tax Rate", s.buyer.taxRate, S.inputPct);
+  inputRow(ACQ.revenue, "Revenue", s.buyer.years[0].revenue, s.buyer.years[1].revenue);
+  inputRow(ACQ.cogs, "Cost of Goods Sold", s.buyer.years[0].cogs, s.buyer.years[1].cogs);
+  ws3.txt(0, ACQ.gp, "Gross Profit", S.lblB);
+  twoCol(ws3, ACQ.gp, (c) => `=${c}${ACQ.revenue}-${c}${ACQ.cogs}`, r.years[0].buyer.gp, r.years[1].buyer.gp, S.formUSDsub);
+  inputRow(ACQ.opex, "Operating Expenses", s.buyer.years[0].opex, s.buyer.years[1].opex);
+  inputRow(ACQ.deprPPE, "Depreciation of PP&E", s.buyer.years[0].deprPPE, s.buyer.years[1].deprPPE);
+  inputRow(ACQ.amort, "Amortization of Intangibles", s.buyer.years[0].amortIntangibles, s.buyer.years[1].amortIntangibles);
+  inputRow(ACQ.sbc, "Stock-Based Compensation", s.buyer.years[0].sbc, s.buyer.years[1].sbc);
+  ws3.txt(0, ACQ.oi, "Operating Income", S.lblB);
+  twoCol(ws3, ACQ.oi, (c) => `=${c}${ACQ.gp}-${c}${ACQ.opex}-${c}${ACQ.deprPPE}-${c}${ACQ.amort}-${c}${ACQ.sbc}`, r.years[0].buyer.oi, r.years[1].buyer.oi, S.formUSDsub);
+  inputRow(ACQ.interest, "Interest Income / (Expense)", s.buyer.years[0].interest, s.buyer.years[1].interest);
+  ws3.txt(0, ACQ.pretax, "Pre-Tax Income", S.lblB);
+  twoCol(ws3, ACQ.pretax, (c) => `=${c}${ACQ.oi}+${c}${ACQ.interest}`, r.years[0].buyer.pt, r.years[1].buyer.pt, S.formUSDsub);
+  ws3.txt(0, ACQ.tax, "Income Tax Provision", S.lbl);
+  twoCol(ws3, ACQ.tax, (c) => `=${c}${ACQ.pretax}*$B$${ACQ.taxRate}`, r.years[0].buyer.tax, r.years[1].buyer.tax, S.formUSD);
+  ws3.txt(0, ACQ.ni, "Net Income", S.lblB);
+  twoCol(ws3, ACQ.ni, (c) => `=${c}${ACQ.pretax}-${c}${ACQ.tax}`, r.years[0].buyer.ni, r.years[1].buyer.ni, S.total);
+  ws3.txt(0, ACQ.eps, "Earnings Per Share (EPS)", S.lbl);
+  twoCol(ws3, ACQ.eps, (c) => `=${c}${ACQ.ni}/$B$${ACQ.sharesEPS}`, r.years[0].buyer.eps, r.years[1].buyer.eps, S.formEPS);
+  ws3.txt(0, ACQ.shares, "Diluted Shares Outstanding", S.lbl);
+  bothCol(ws3, ACQ.shares, `=$B$${ACQ.sharesEPS}`, s.buyer.dilutedSharesEPS, S.formNum);
+
+  // Target
+  ws3.txt(0, TGT.hdr, `${s.targetName} (Target)`, S.banner).band(0, 2, TGT.hdr, S.banner).merge(0, TGT.hdr, 2, TGT.hdr);
+  ws3.txt(1, TGT.yrhdr, s.seller.years[0].label, S.lblB); ws3.txt(2, TGT.yrhdr, s.seller.years[1].label, S.lblB);
+  profileRow(TGT.sharePrice, "Share Price ($)", s.seller.sharePrice, S.inputUSD2);
+  profileRow(TGT.sharesMkt, "Diluted Shares — Mkt Cap (000s)", s.seller.dilutedSharesMktCap, S.inputNum);
+  profileRow(TGT.sharesEPS, "Diluted Shares — EPS Calc (000s)", s.seller.dilutedSharesEPS, S.inputNum);
+  profileRow(TGT.taxRate, "Tax Rate", s.seller.taxRate, S.inputPct);
+  profileRow(TGT.bookValue, "Book Value of Equity ($mm)", s.seller.bookValueEquity, S.inputUSD);
+  profileRow(TGT.existingGW, "Existing Goodwill ($mm)", s.seller.existingGoodwill, S.inputUSD);
+  profileRow(TGT.netPPE, "Net PP&E ($mm)", s.seller.netPPE, S.inputUSD);
+  inputRow(TGT.revenue, "Revenue", s.seller.years[0].revenue, s.seller.years[1].revenue);
+  inputRow(TGT.cogs, "Cost of Goods Sold", s.seller.years[0].cogs, s.seller.years[1].cogs);
+  ws3.txt(0, TGT.gp, "Gross Profit", S.lblB);
+  twoCol(ws3, TGT.gp, (c) => `=${c}${TGT.revenue}-${c}${TGT.cogs}`, r.years[0].seller.gp, r.years[1].seller.gp, S.formUSDsub);
+  inputRow(TGT.opex, "Operating Expenses", s.seller.years[0].opex, s.seller.years[1].opex);
+  inputRow(TGT.deprPPE, "Depreciation of PP&E", s.seller.years[0].deprPPE, s.seller.years[1].deprPPE);
+  inputRow(TGT.amort, "Amortization of Intangibles", s.seller.years[0].amortIntangibles, s.seller.years[1].amortIntangibles);
+  inputRow(TGT.sbc, "Stock-Based Compensation", s.seller.years[0].sbc, s.seller.years[1].sbc);
+  ws3.txt(0, TGT.oi, "Operating Income", S.lblB);
+  twoCol(ws3, TGT.oi, (c) => `=${c}${TGT.gp}-${c}${TGT.opex}-${c}${TGT.deprPPE}-${c}${TGT.amort}-${c}${TGT.sbc}`, r.years[0].seller.oi, r.years[1].seller.oi, S.formUSDsub);
+  inputRow(TGT.interest, "Interest Income / (Expense)", s.seller.years[0].interest, s.seller.years[1].interest);
+  ws3.txt(0, TGT.pretax, "Pre-Tax Income", S.lblB);
+  twoCol(ws3, TGT.pretax, (c) => `=${c}${TGT.oi}+${c}${TGT.interest}`, r.years[0].seller.pt, r.years[1].seller.pt, S.formUSDsub);
+  ws3.txt(0, TGT.tax, "Income Tax Provision", S.lbl);
+  twoCol(ws3, TGT.tax, (c) => `=${c}${TGT.pretax}*$B$${TGT.taxRate}`, r.years[0].seller.tax, r.years[1].seller.tax, S.formUSD);
+  ws3.txt(0, TGT.ni, "Net Income", S.lblB);
+  twoCol(ws3, TGT.ni, (c) => `=${c}${TGT.pretax}-${c}${TGT.tax}`, r.years[0].seller.ni, r.years[1].seller.ni, S.total);
+  ws3.txt(0, TGT.eps, "Earnings Per Share (EPS)", S.lbl);
+  twoCol(ws3, TGT.eps, (c) => `=${c}${TGT.ni}/$B$${TGT.sharesEPS}`, r.years[0].seller.eps, r.years[1].seller.eps, S.formEPS);
+  ws3.txt(0, TGT.shares, "Diluted Shares Outstanding", S.lbl);
+  bothCol(ws3, TGT.shares, `=$B$${TGT.sharesEPS}`, s.seller.dilutedSharesEPS, S.formNum);
+
+  // Pro Forma Combined — every line is a formula off the Acquirer/Target
+  // blocks above and the Assumptions & Goodwill sheet.
+  ws3.txt(0, CMB.hdr, "Pro Forma Combined", S.banner).band(0, 2, CMB.hdr, S.banner).merge(0, CMB.hdr, 2, CMB.hdr);
+  ws3.txt(1, CMB.yrhdr, s.buyer.years[0].label, S.lblB); ws3.txt(2, CMB.yrhdr, s.buyer.years[1].label, S.lblB);
+  const c0 = r.years[0].combined, c1 = r.years[1].combined;
+
+  ws3.txt(0, CMB.rev, "Combined Revenue", S.lbl);
+  twoCol(ws3, CMB.rev, (c) => `=${c}${ACQ.revenue}+${c}${TGT.revenue}`, c0.combinedRevenue, c1.combinedRevenue, S.formUSD);
+  ws3.txt(0, CMB.revSyn, "Revenue Synergies", S.lbl);
+  twoCol(ws3, CMB.revSyn, (c) => `=${AGref("B", AS.revSynPct)}*${c}${TGT.revenue}`, c0.revSynergies, c1.revSynergies, S.formUSD);
+  ws3.txt(0, CMB.cogs, "Cost of Goods Sold", S.lbl);
+  twoCol(ws3, CMB.cogs, (c) => `=${c}${ACQ.cogs}+${c}${TGT.cogs}`, c0.combinedCOGS, c1.combinedCOGS, S.formUSD);
+  ws3.txt(0, CMB.revSynCogs, "Revenue Synergy COGS", S.lbl);
+  twoCol(ws3, CMB.revSynCogs, (c) => `=${AGref("B", AS.revSynCogsPct)}*${c}${CMB.revSyn}`, c0.revSynergyCOGS, c1.revSynergyCOGS, S.formUSD);
+  ws3.txt(0, CMB.gp, "Gross Profit", S.lblB);
+  twoCol(ws3, CMB.gp, (c) => `=${c}${CMB.rev}+${c}${CMB.revSyn}-${c}${CMB.cogs}-${c}${CMB.revSynCogs}`, c0.grossProfit, c1.grossProfit, S.formUSDsub);
+  ws3.txt(0, CMB.opex, "Operating Expenses", S.lbl);
+  twoCol(ws3, CMB.opex, (c) => `=${c}${ACQ.opex}+${c}${TGT.opex}`, c0.combinedOpex, c1.combinedOpex, S.formUSD);
+  ws3.txt(0, CMB.opexSyn, "OpEx Synergies", S.lbl);
+  twoCol(ws3, CMB.opexSyn, (c) => `=${AGref("B", AS.opexSynPct)}*${c}${TGT.opex}`, c0.opexSynergies, c1.opexSynergies, S.formUSD);
+  ws3.txt(0, CMB.deprPPE, "Depreciation of PP&E", S.lbl);
+  twoCol(ws3, CMB.deprPPE, (c) => `=${c}${ACQ.deprPPE}+${c}${TGT.deprPPE}`, c0.combinedDeprPPE, c1.combinedDeprPPE, S.formUSD);
+  ws3.txt(0, CMB.deprWriteUp, "Depr. of PP&E Write-Up", S.lbl);
+  bothCol(ws3, CMB.deprWriteUp, `=-${AGref("B", GW.lessPPE)}/${AGref("B", AS.deprPeriod)}`, c0.deprPPEWriteUp, S.formUSD);
+  ws3.txt(0, CMB.amort, "Amortization of Intangibles", S.lbl);
+  twoCol(ws3, CMB.amort, (c) => `=${c}${ACQ.amort}+${c}${TGT.amort}`, c0.combinedAmort, c1.combinedAmort, S.formUSD);
+  ws3.txt(0, CMB.amortNew, "Amort. of New Intangibles", S.lbl);
+  bothCol(ws3, CMB.amortNew, `=-${AGref("B", GW.lessIntang)}/${AGref("B", AS.amortPeriod)}`, c0.amortNewIntangibles, S.formUSD);
+  ws3.txt(0, CMB.sbc, "Stock-Based Compensation", S.lbl);
+  twoCol(ws3, CMB.sbc, (c) => `=${c}${ACQ.sbc}+${c}${TGT.sbc}`, c0.combinedSBC, c1.combinedSBC, S.formUSD);
+  ws3.txt(0, CMB.oi, "Operating Income", S.lblB);
+  twoCol(ws3, CMB.oi, (c) => `=${c}${CMB.gp}-(${c}${CMB.opex}-${c}${CMB.opexSyn})-${c}${CMB.deprPPE}-${c}${CMB.deprWriteUp}-${c}${CMB.amort}-${c}${CMB.amortNew}-${c}${CMB.sbc}`, c0.opInc, c1.opInc, S.formUSDsub);
+  ws3.txt(0, CMB.interest, "Interest Income / (Expense)", S.lbl);
+  twoCol(ws3, CMB.interest, (c) => `=${c}${ACQ.interest}+${c}${TGT.interest}`, c0.combinedInterest, c1.combinedInterest, S.formUSD);
+  ws3.txt(0, CMB.foregone, "Foregone Interest on Cash", S.lbl);
+  bothCol(ws3, CMB.foregone, `=-${AGref("E", SU.cashUsed)}*${AGref("B", AS.foregoneCashRate)}`, c0.foregoneInterest, S.formUSD);
+  ws3.txt(0, CMB.newDebtInt, "Interest Paid on New Debt", S.lbl);
+  bothCol(ws3, CMB.newDebtInt, `=-${AGref("E", SU.debtIssued)}*${AGref("B", AS.debtInterestRate)}`, c0.newDebtInterest, S.formUSD);
+  ws3.txt(0, CMB.pretax, "Pre-Tax Income", S.lblB);
+  twoCol(ws3, CMB.pretax, (c) => `=${c}${CMB.oi}+${c}${CMB.interest}+${c}${CMB.foregone}+${c}${CMB.newDebtInt}`, c0.preTax, c1.preTax, S.formUSDsub);
+  ws3.txt(0, CMB.tax, "Income Tax Provision", S.lbl);
+  twoCol(ws3, CMB.tax, (c) => `=${c}${CMB.pretax}*$B$${ACQ.taxRate}`, c0.tax, c1.tax, S.formUSD);
+  ws3.txt(0, CMB.ni, "Net Income", S.lblB);
+  twoCol(ws3, CMB.ni, (c) => `=${c}${CMB.pretax}-${c}${CMB.tax}`, c0.netIncome, c1.netIncome, S.total);
+  ws3.txt(0, CMB.eps, "Pro Forma EPS", S.lbl);
+  twoCol(ws3, CMB.eps, (c) => `=${c}${CMB.ni}/${c}${CMB.shares}`, c0.proFormaEPS, c1.proFormaEPS, S.formEPS);
+  ws3.txt(0, CMB.shares, "Diluted Shares Outstanding", S.lbl);
+  bothCol(ws3, CMB.shares, `=$B$${ACQ.sharesEPS}+${AGref("E", SU.newShares)}`, c0.combinedDilutedShares, S.formNum);
+  ws3.txt(0, CMB.accretion, "Accretion / (Dilution) %", S.lblB);
+  ws3.fml(1, CMB.accretion, `=B${CMB.eps}/B${ACQ.eps}-1`, r.years[0].accretionPct, accStyle(r.years[0].accretionPct));
+  ws3.fml(2, CMB.accretion, `=C${CMB.eps}/C${ACQ.eps}-1`, r.years[1].accretionPct, accStyle(r.years[1].accretionPct));
+
+  // ================= SHEET: Assumptions & Goodwill =================
+  const ws2 = WSheet(AG_SHEET, { cols: [34, 16, 6, 34, 16] });
+  ws2.txt(0, AS.hdr, "Transaction Assumptions", S.banner).band(0, 4, AS.hdr, S.banner).merge(0, AS.hdr, 4, AS.hdr);
+  [
+    [AS.offerPrice, "Per Share Purchase Price", s.offerPrice, S.inputUSD2],
+    [AS.pctCash, "% Cash", s.pctCash, S.inputPct], [AS.pctDebt, "% Debt", s.pctDebt, S.inputPct], [AS.pctStock, "% Stock", s.pctStock, S.inputPct],
+    [AS.foregoneCashRate, "Foregone Cash Interest Rate", s.foregoneCashRate, S.inputPct],
+    [AS.debtInterestRate, "Debt Interest Rate", s.debtInterestRate, S.inputPct],
+    [AS.revSynPct, "Revenue Synergy %", s.revSynergyPct, S.inputPct], [AS.revSynCogsPct, "Revenue Synergy COGS %", s.revSynergyCOGSPct, S.inputPct],
+    [AS.opexSynPct, "Cost Synergies % OpEx", s.opexSynergyPct, S.inputPct], [AS.ppeWriteUpPct, "PP&E Write-Up %", s.ppeWriteUpPct, S.inputPct],
+    [AS.deprPeriod, "Depreciation Period (yrs)", s.deprPeriod, S.inputInt], [AS.pctAllocIntangibles, "% Allocated to Intangibles", s.pctAllocIntangibles, S.inputPct],
+    [AS.amortPeriod, "Amortization Period (yrs)", s.amortPeriod, S.inputInt], [AS.dtlWriteDown, "Write-Down of Existing DTL", s.dtlWriteDown, S.inputUSD],
+  ].forEach(([row, label, val, style]) => { ws2.txt(0, row, label, S.lbl); ws2.num(1, row, val, style); });
+
+  ws2.txt(3, SU.hdr, "Sources of Funds", S.banner).band(3, 4, SU.hdr, S.banner).merge(3, SU.hdr, 4, SU.hdr);
+  ws2.txt(3, SU.equityPP, "Equity Purchase Price", S.lbl);
+  ws2.fml(4, SU.equityPP, `=B${AS.offerPrice}*${ISref("B", TGT.sharesMkt)}/1000`, r.equityPurchasePrice, S.formUSD);
+  ws2.txt(3, SU.cashUsed, "Cash Used", S.lbl);
+  ws2.fml(4, SU.cashUsed, `=E${SU.equityPP}*B${AS.pctCash}`, r.cashUsed, S.formUSD);
+  ws2.txt(3, SU.debtIssued, "Debt Issued", S.lbl);
+  ws2.fml(4, SU.debtIssued, `=E${SU.equityPP}*B${AS.pctDebt}`, r.debtIssued, S.formUSD);
+  ws2.txt(3, SU.newShares, "New Shares Issued (000s)", S.lbl);
+  ws2.fml(4, SU.newShares, `=E${SU.equityPP}*B${AS.pctStock}/${ISref("B", ACQ.sharePrice)}*1000`, r.newSharesIssued, S.formNum);
+
+  ws2.txt(0, GW.hdr, "Goodwill Calculation", S.banner).band(0, 1, GW.hdr, S.banner).merge(0, GW.hdr, 1, GW.hdr);
+  ws2.txt(0, GW.equityPP, "Equity Purchase Price", S.lbl);
+  ws2.fml(1, GW.equityPP, `=E${SU.equityPP}`, r.equityPurchasePrice, S.formUSD);
+  ws2.txt(0, GW.lessBV, "Less: Target Book Value", S.lbl);
+  ws2.fml(1, GW.lessBV, `=-${ISref("B", TGT.bookValue)}`, -s.seller.bookValueEquity, S.formUSD);
+  ws2.txt(0, GW.plusGW, "Plus: Write-Off of Existing Goodwill", S.lbl);
+  ws2.fml(1, GW.plusGW, `=${ISref("B", TGT.existingGW)}`, s.seller.existingGoodwill, S.formUSD);
+  ws2.txt(0, GW.totalPremium, "Total Allocable Purchase Premium", S.lbl);
+  ws2.fml(1, GW.totalPremium, `=B${GW.equityPP}+B${GW.lessBV}+B${GW.plusGW}`, r.totalAllocablePremium, S.total);
+  ws2.txt(0, GW.lessPPE, "Less: Write-Up of PP&E", S.lbl);
+  ws2.fml(1, GW.lessPPE, `=-B${AS.ppeWriteUpPct}*${ISref("B", TGT.netPPE)}`, -r.ppeWriteUpAmount, S.formUSD);
+  ws2.txt(0, GW.lessIntang, "Less: Write-Up of Intangibles", S.lbl);
+  ws2.fml(1, GW.lessIntang, `=-B${AS.pctAllocIntangibles}*B${GW.totalPremium}`, -r.intangiblesWriteUpAmount, S.formUSD);
+  ws2.txt(0, GW.lessDTL, "Less: Write-Down of DTL", S.lbl);
+  ws2.fml(1, GW.lessDTL, `=-B${AS.dtlWriteDown}`, -s.dtlWriteDown, S.formUSD);
+  ws2.txt(0, GW.plusDTL, "Plus: New Deferred Tax Liability", S.lbl);
+  ws2.fml(1, GW.plusDTL, `=(-B${GW.lessPPE}-B${GW.lessIntang})*${ISref("B", ACQ.taxRate)}`, r.newDTL, S.formUSD);
+  ws2.txt(0, GW.totalGoodwill, "Total Goodwill Created", S.lbl);
+  ws2.fml(1, GW.totalGoodwill, `=B${GW.totalPremium}+B${GW.lessPPE}+B${GW.lessIntang}+B${GW.lessDTL}+B${GW.plusDTL}`, r.totalGoodwill, S.total);
+
+  // ================= SHEET: Summary =================
   const ws1 = WSheet("Summary", { cols: [34, 20, 20, 20] });
   ws1.txt(0, 1, `Merger Model — ${s.acquirerName} acquires ${s.targetName}`, S.title).band(0, 3, 1, S.title).merge(0, 1, 3, 1);
   ws1.txt(0, 2, "($ in Millions, Except Per Share Amounts; Share Counts in Thousands)", S.subtitle).band(0, 3, 2, S.subtitle).merge(0, 2, 3, 2);
   let row = 4;
   ws1.txt(0, row, "DEAL SUMMARY", S.banner).band(0, 3, row, S.banner).merge(0, row, 3, row); row++;
-  [
-    ["Offer Price / Share", s.offerPrice, S.formUSD],
-    ["Premium to Target Share Price", s.offerPrice / s.seller.sharePrice - 1, S.formPct],
-    ["Equity Purchase Price", r.equityPurchasePrice, S.formUSD],
-    ["Total Goodwill Created", r.totalGoodwill, S.formUSD],
-    [`${s.buyer.years[0].label} EPS Accretion / (Dilution)`, r.years[0].accretionPct, S.formPct],
-    [`${s.buyer.years[1].label} EPS Accretion / (Dilution)`, r.years[1].accretionPct, S.formPct],
-  ].forEach(([label, val, style]) => { ws1.txt(0, row, label, S.lbl); ws1.num(1, row, val, style); row++; });
+  ws1.txt(0, row, "Offer Price / Share", S.lbl); ws1.fml(1, row, `=${AGref("B", AS.offerPrice)}`, s.offerPrice, S.formUSD); row++;
+  ws1.txt(0, row, "Premium to Target Share Price", S.lbl);
+  ws1.fml(1, row, `=${AGref("B", AS.offerPrice)}/${ISref("B", TGT.sharePrice)}-1`, s.offerPrice / s.seller.sharePrice - 1, S.formPct); row++;
+  ws1.txt(0, row, "Equity Purchase Price", S.lbl); ws1.fml(1, row, `=${AGref("E", SU.equityPP)}`, r.equityPurchasePrice, S.formUSD); row++;
+  ws1.txt(0, row, "Total Goodwill Created", S.lbl); ws1.fml(1, row, `=${AGref("B", GW.totalGoodwill)}`, r.totalGoodwill, S.formUSD); row++;
+  ws1.txt(0, row, `${s.buyer.years[0].label} EPS Accretion / (Dilution)`, S.lbl); ws1.fml(1, row, `=${ISref("B", CMB.accretion)}`, r.years[0].accretionPct, S.formPct); row++;
+  ws1.txt(0, row, `${s.buyer.years[1].label} EPS Accretion / (Dilution)`, S.lbl); ws1.fml(1, row, `=${ISref("C", CMB.accretion)}`, r.years[1].accretionPct, S.formPct); row++;
   row += 1;
   ws1.txt(0, row, "SOURCING (primary regulator filings only)", S.banner).band(0, 3, row, S.banner).merge(0, row, 3, row); row++;
   [["Acquirer", s.acquirerName, s.buyer], ["Target", s.targetName, s.seller]].forEach(([role, name, side]) => {
@@ -493,100 +717,90 @@ function buildMergerWorkbook(d) {
     row++;
   });
 
-  // ---------- Assumptions & Goodwill ----------
-  const ws2 = WSheet("Assumptions & Goodwill", { cols: [34, 16, 6, 34, 16] });
-  ws2.txt(0, 1, "Transaction Assumptions", S.banner).band(0, 4, 1, S.banner).merge(0, 1, 4, 1);
-  const assump = [
-    ["Per Share Purchase Price", s.offerPrice, S.inputUSD],
-    ["% Cash", s.pctCash, S.inputPct], ["% Debt", s.pctDebt, S.inputPct], ["% Stock", s.pctStock, S.inputPct],
-    ["Foregone Cash Interest Rate", s.foregoneCashRate, S.inputPct], ["Debt Interest Rate", s.debtInterestRate, S.inputPct],
-    ["Revenue Synergy %", s.revSynergyPct, S.inputPct], ["Revenue Synergy COGS %", s.revSynergyCOGSPct, S.inputPct],
-    ["Cost Synergies % OpEx", s.opexSynergyPct, S.inputPct], ["PP&E Write-Up %", s.ppeWriteUpPct, S.inputPct],
-    ["Depreciation Period (yrs)", s.deprPeriod, S.inputInt], ["% Allocated to Intangibles", s.pctAllocIntangibles, S.inputPct],
-    ["Amortization Period (yrs)", s.amortPeriod, S.inputInt], ["Write-Down of Existing DTL", s.dtlWriteDown, S.inputUSD],
-  ];
-  let r2 = 3;
-  assump.forEach(([label, val, style]) => { ws2.txt(0, r2, label, S.lbl); ws2.num(1, r2, val, style); r2++; });
-  ws2.txt(3, 3, "Sources of Funds", S.banner).band(3, 4, 3, S.banner).merge(3, 3, 4, 3);
-  const sources = [
-    ["Equity Purchase Price", r.equityPurchasePrice, S.formUSD], ["Cash Used", r.cashUsed, S.formUSD],
-    ["Debt Issued", r.debtIssued, S.formUSD], ["New Shares Issued (000s)", r.newSharesIssued, S.formNum],
-  ];
-  let r3 = 4; sources.forEach(([label, val, style]) => { ws2.txt(3, r3, label, S.lbl); ws2.num(4, r3, val, style); r3++; });
-  let r4 = r2 + 2;
-  ws2.txt(0, r4, "Goodwill Calculation", S.banner).band(0, 1, r4, S.banner).merge(0, r4, 1, r4); r4++;
-  [
-    ["Equity Purchase Price", r.equityPurchasePrice, false],
-    ["Less: Target Book Value", -s.seller.bookValueEquity, false],
-    ["Plus: Write-Off of Existing Goodwill", s.seller.existingGoodwill, false],
-    ["Total Allocable Purchase Premium", r.totalAllocablePremium, true],
-    ["Less: Write-Up of PP&E", -r.ppeWriteUpAmount, false],
-    ["Less: Write-Up of Intangibles", -r.intangiblesWriteUpAmount, false],
-    ["Less: Write-Down of DTL", -s.dtlWriteDown, false],
-    ["Plus: New Deferred Tax Liability", r.newDTL, false],
-    ["Total Goodwill Created", r.totalGoodwill, true],
-  ].forEach(([label, val, isTotal]) => { ws2.txt(0, r4, label, S.lbl); ws2.num(1, r4, val, isTotal ? S.total : S.formUSD); r4++; });
-
-  // ---------- Income Statements ----------
-  const ws3 = WSheet("Income Statements", { cols: [30, 15, 15, 4, 15, 15] });
-  function isBlock(startRow, title, y0, y1) {
-    ws3.txt(0, startRow, title, S.banner).band(0, 1, startRow, S.banner).merge(0, startRow, 1, startRow);
-    let rr = startRow + 1;
-    ws3.txt(1, rr, y0.label, S.lblB); ws3.txt(2, rr, y1.label, S.lblB); rr++;
-    [
-      ["Revenue", y0.revenue, y1.revenue, true], ["Cost of Goods Sold", y0.cogs, y1.cogs, true],
-      ["Gross Profit", y0.revenue - y0.cogs, y1.revenue - y1.cogs, false],
-      ["Operating Expenses", y0.opex, y1.opex, true], ["Depreciation of PP&E", y0.deprPPE, y1.deprPPE, true],
-      ["Amortization of Intangibles", y0.amortIntangibles, y1.amortIntangibles, true], ["Stock-Based Compensation", y0.sbc, y1.sbc, true],
-    ].forEach(([label, v0, v1, isInput]) => {
-      ws3.txt(0, rr, label, S.lbl);
-      ws3.num(1, rr, v0, isInput ? S.inputUSD : S.formUSD);
-      ws3.num(2, rr, v1, isInput ? S.inputUSD : S.formUSD);
-      rr++;
-    });
-    return rr;
-  }
-  let nextRow = isBlock(1, `${s.acquirerName} (Acquirer)`, s.buyer.years[0], s.buyer.years[1]);
-  nextRow = isBlock(nextRow + 2, `${s.targetName} (Target)`, s.seller.years[0], s.seller.years[1]);
-  const startC = nextRow + 2;
-  ws3.txt(0, startC, "Pro Forma Combined", S.banner).band(0, 2, startC, S.banner).merge(0, startC, 2, startC);
-  let rc = startC + 1;
-  ws3.txt(1, rc, s.buyer.years[0].label, S.lblB); ws3.txt(2, rc, s.buyer.years[1].label, S.lblB); rc++;
-  const c0 = r.years[0].combined, c1 = r.years[1].combined;
-  [
-    ["Combined Revenue", c0.combinedRevenue, c1.combinedRevenue], ["Revenue Synergies", c0.revSynergies, c1.revSynergies],
-    ["Cost of Goods Sold", c0.combinedCOGS, c1.combinedCOGS], ["Revenue Synergy COGS", c0.revSynergyCOGS, c1.revSynergyCOGS],
-    ["Gross Profit", c0.grossProfit, c1.grossProfit], ["Operating Expenses", c0.combinedOpex, c1.combinedOpex],
-    ["OpEx Synergies", c0.opexSynergies, c1.opexSynergies], ["Depreciation of PP&E", c0.combinedDeprPPE, c1.combinedDeprPPE],
-    ["Depr. of PP&E Write-Up", c0.deprPPEWriteUp, c1.deprPPEWriteUp], ["Amortization of Intangibles", c0.combinedAmort, c1.combinedAmort],
-    ["Amort. of New Intangibles", c0.amortNewIntangibles, c1.amortNewIntangibles], ["Stock-Based Compensation", c0.combinedSBC, c1.combinedSBC],
-    ["Operating Income", c0.opInc, c1.opInc], ["Interest Income / (Expense)", c0.combinedInterest, c1.combinedInterest],
-    ["Foregone Interest on Cash", c0.foregoneInterest, c1.foregoneInterest], ["Interest Paid on New Debt", c0.newDebtInterest, c1.newDebtInterest],
-    ["Pre-Tax Income", c0.preTax, c1.preTax], ["Income Tax Provision", c0.tax, c1.tax],
-  ].forEach(([label, v0, v1]) => { ws3.txt(0, rc, label, S.lbl); ws3.num(1, rc, v0, S.formUSD); ws3.num(2, rc, v1, S.formUSD); rc++; });
-  ws3.txt(0, rc, "Net Income", S.lblB); ws3.num(1, rc, c0.netIncome, S.total); ws3.num(2, rc, c1.netIncome, S.total); rc += 2;
-  ws3.txt(0, rc, "Pro Forma EPS", S.lbl); ws3.num(1, rc, c0.proFormaEPS, S.formEPS); ws3.num(2, rc, c1.proFormaEPS, S.formEPS); rc++;
-  ws3.txt(0, rc, "Accretion / (Dilution) %", S.lblB);
-  ws3.num(1, rc, r.years[0].accretionPct, accStyle(r.years[0].accretionPct));
-  ws3.num(2, rc, r.years[1].accretionPct, accStyle(r.years[1].accretionPct));
-
-  // ---------- Sensitivity ----------
+  // ================= SHEET: Sensitivity =================
+  // Two 10×9 matrices plus a shared "calculation detail" helper block:
+  // every accretion% cell is a real formula chained off the helper row
+  // for its price and the matrix's own column header for its synergy %,
+  // both of which in turn trace back to the Assumptions & Income
+  // Statements sheets — so the whole grid recalculates live in Excel.
   const ws4 = WSheet("Sensitivity", { cols: [14, ...Array(9).fill(10)] });
-  function sensBlock(startRow, title, matrix) {
-    ws4.txt(0, startRow, title, S.banner).band(0, 9, startRow, S.banner).merge(0, startRow, 9, startRow);
-    let rr = startRow + 1;
-    ws4.txt(0, rr, "Price \\ Synergy%", S.lblB);
-    sens.synergyLevels.forEach((syn, ci) => ws4.num(ci + 1, rr, syn, hdrPctCenter));
-    rr++;
-    matrix.forEach((mrow, ri) => {
-      ws4.num(0, rr, sens.priceLevels[ri], priceLbl);
-      mrow.forEach((v, ci) => ws4.num(ci + 1, rr, v, heatCell(v)));
-      rr++;
-    });
-    return rr;
+  const OPEX_START = 1, OPEX_HDR = OPEX_START + 1, OPEX_R0 = OPEX_HDR + 1; // first price row of opex matrix
+  const REV_START = OPEX_R0 + 10 + 1, REV_HDR = REV_START + 1, REV_R0 = REV_HDR + 1;
+  const HELP_START = REV_R0 + 10 + 1, HELP_HDR = HELP_START + 1, HELP_R0 = HELP_HDR + 1;
+
+  ws4.txt(0, OPEX_START, "EPS Accretion/Dilution vs. Purchase Price & OpEx Synergies", S.banner).band(0, 9, OPEX_START, S.banner).merge(0, OPEX_START, 9, OPEX_START);
+  ws4.txt(0, OPEX_HDR, "Price \\ Synergy%", S.lblB);
+  SYNERGY_LEVELS.forEach((syn, ci) => ws4.num(ci + 1, OPEX_HDR, syn, hdrPctCenter));
+
+  ws4.txt(0, REV_START, "EPS Accretion/Dilution vs. Purchase Price & Revenue Synergies", S.banner).band(0, 9, REV_START, S.banner).merge(0, REV_START, 9, REV_START);
+  ws4.txt(0, REV_HDR, "Price \\ Synergy%", S.lblB);
+  SYNERGY_LEVELS.forEach((syn, ci) => ws4.num(ci + 1, REV_HDR, syn, hdrPctCenter));
+
+  ws4.txt(0, HELP_START, "Calculation Detail (drives both matrices above)", S.banner).band(0, 10, HELP_START, S.banner).merge(0, HELP_START, 10, HELP_START);
+  ["Price", "Equity Purchase Price", "Cash Used", "Debt Issued", "Total Alloc. Premium", "Intangibles Write-Up", "Amort. New Intangibles", "Foregone Interest", "Interest on New Debt", "New Shares Issued", "Combined Diluted Shares"]
+    .forEach((label, ci) => ws4.txt(ci, HELP_HDR, label, S.lblB));
+
+  const fixed = {
+    gp: ISref("C", CMB.gp), opex: ISref("C", CMB.opex), tgtOpex: ISref("C", TGT.opex), tgtRev: ISref("C", TGT.revenue),
+    rev: ISref("C", CMB.rev), cogs: ISref("C", CMB.cogs), deprPPE: ISref("C", CMB.deprPPE), deprWU: ISref("C", CMB.deprWriteUp),
+    amort: ISref("C", CMB.amort), sbc: ISref("C", CMB.sbc), interest: ISref("C", CMB.interest), taxRate: ISref("B", ACQ.taxRate),
+    eps: ISref("C", ACQ.eps), revSynCogsPct: AGref("B", AS.revSynCogsPct), opexSynPctBase: AGref("B", AS.opexSynPct),
+  };
+
+  for (let ri = 0; ri < 10; ri++) {
+    const opexRow = OPEX_R0 + ri, revRow = REV_R0 + ri, helpRow = HELP_R0 + ri;
+    const price = sens.priceLevels[ri];
+    // computeDeal at this price (base synergies) supplies accurate cached
+    // values for the helper cells — the formulas themselves are what Excel
+    // actually recalculates; this is only the fallback shown before that.
+    const pr = computeDeal(s, price);
+    const eqpp = `B${helpRow}`, cash = `C${helpRow}`, debt = `D${helpRow}`, prem = `E${helpRow}`, intang = `F${helpRow}`,
+      amortNew = `G${helpRow}`, forgn = `H${helpRow}`, newDebtI = `I${helpRow}`, newSh = `J${helpRow}`;
+
+    // price header (opex matrix): live off the base offer price
+    ws4.fml(0, opexRow, `=ROUND(${AGref("B", AS.offerPrice)}*${PRICE_FACTORS[ri]},2)`, price, priceLbl);
+    // rev matrix + helper block just link back to that same cell
+    ws4.fml(0, revRow, `=A${opexRow}`, price, priceLbl);
+    ws4.fml(0, helpRow, `=A${opexRow}`, price, priceLbl);
+
+    ws4.fml(1, helpRow, `=A${helpRow}*${ISref("B", TGT.sharesMkt)}/1000`, pr.equityPurchasePrice, S.formUSD);
+    ws4.fml(2, helpRow, `=${eqpp}*${AGref("B", AS.pctCash)}`, pr.cashUsed, S.formUSD);
+    ws4.fml(3, helpRow, `=${eqpp}*${AGref("B", AS.pctDebt)}`, pr.debtIssued, S.formUSD);
+    ws4.fml(4, helpRow, `=${eqpp}-${ISref("B", TGT.bookValue)}+${ISref("B", TGT.existingGW)}`, pr.totalAllocablePremium, S.formUSD);
+    ws4.fml(5, helpRow, `=${AGref("B", AS.pctAllocIntangibles)}*${prem}`, pr.intangiblesWriteUpAmount, S.formUSD);
+    ws4.fml(6, helpRow, `=${intang}/${AGref("B", AS.amortPeriod)}`, pr.intangiblesWriteUpAmount / s.amortPeriod, S.formUSD);
+    ws4.fml(7, helpRow, `=-${cash}*${AGref("B", AS.foregoneCashRate)}`, -pr.cashUsed * s.foregoneCashRate, S.formUSD);
+    ws4.fml(8, helpRow, `=-${debt}*${AGref("B", AS.debtInterestRate)}`, -pr.debtIssued * s.debtInterestRate, S.formUSD);
+    ws4.fml(9, helpRow, `=${eqpp}*${AGref("B", AS.pctStock)}/${ISref("B", ACQ.sharePrice)}*1000`, pr.newSharesIssued, S.formNum);
+    ws4.fml(10, helpRow, `=${ISref("B", ACQ.sharesEPS)}+${newSh}`, s.buyer.dilutedSharesEPS + pr.newSharesIssued, S.formNum);
   }
-  const sr = sensBlock(1, "EPS Accretion/Dilution vs. Purchase Price & OpEx Synergies", sens.opexMatrix);
-  sensBlock(sr + 2, "EPS Accretion/Dilution vs. Purchase Price & Revenue Synergies", sens.revMatrix);
+
+  // matrix cells: opex-synergy matrix (col varies opexSynergyPct, gross profit fixed)
+  for (let ri = 0; ri < 10; ri++) {
+    const opexRow = OPEX_R0 + ri, helpRow = HELP_R0 + ri;
+    const g = `G${helpRow}`, h = `H${helpRow}`, i = `I${helpRow}`, k = `K${helpRow}`;
+    sens.opexMatrix[ri].forEach((v, ci) => {
+      const col = colName(ci + 1);
+      const synCell = `${col}$${OPEX_HDR}`;
+      const preTax = `(${fixed.gp}-(${fixed.opex}-${synCell}*${fixed.tgtOpex})-${fixed.deprPPE}-${fixed.deprWU}-${fixed.amort}-${g}-${fixed.sbc}+${fixed.interest}+${h}+${i})`;
+      const formula = `=${preTax}*(1-${fixed.taxRate})/${k}/${fixed.eps}-1`;
+      ws4.fml(ci + 1, opexRow, formula, v, heatCell(v));
+    });
+  }
+  // matrix cells: revenue-synergy matrix (col varies revSynergyPct, gross profit varies)
+  for (let ri = 0; ri < 10; ri++) {
+    const revRow = REV_R0 + ri, helpRow = HELP_R0 + ri;
+    const g = `G${helpRow}`, h = `H${helpRow}`, i = `I${helpRow}`, k = `K${helpRow}`;
+    sens.revMatrix[ri].forEach((v, ci) => {
+      const col = colName(ci + 1);
+      const synCell = `${col}$${REV_HDR}`;
+      const revSyn = `${synCell}*${fixed.tgtRev}`;
+      const gp = `(${fixed.rev}+${revSyn}-${fixed.cogs}-${fixed.revSynCogsPct}*(${revSyn}))`;
+      const preTax = `(${gp}-(${fixed.opex}-${fixed.opexSynPctBase}*${fixed.tgtOpex})-${fixed.deprPPE}-${fixed.deprWU}-${fixed.amort}-${g}-${fixed.sbc}+${fixed.interest}+${h}+${i})`;
+      const formula = `=${preTax}*(1-${fixed.taxRate})/${k}/${fixed.eps}-1`;
+      ws4.fml(ci + 1, revRow, formula, v, heatCell(v));
+    });
+  }
 
   return writeXlsx([ws1, ws2, ws3, ws4], SB);
 }
