@@ -1,19 +1,22 @@
 import React, { useState } from "react";
 import LBOModel from "./LBOModel.jsx";
 import MergerModel from "./MergerModel.jsx";
+import SotpModel from "./SotpModel.jsx";
 import { INK, LINE, AMBER, MUTED, mono } from "./lib/theme.js";
 
 const TOOLS = [
-  { id: "lbo", label: "LBO Model" },
-  { id: "merger", label: "M&A Merger Model" },
+  { id: "lbo", label: "LBO Model", Component: LBOModel },
+  { id: "merger", label: "M&A Merger Model", Component: MergerModel },
+  { id: "sotp", label: "SOTP Valuation Builder", Component: SotpModel },
 ];
 
 export default function App() {
   const [tool, setTool] = useState("lbo");
+  const Active = TOOLS.find((t) => t.id === tool).Component;
   return (
     <>
       <div style={{ position: "sticky", top: 0, zIndex: 40, background: INK, borderBottom: `1px solid ${LINE}` }}>
-        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "10px 22px", display: "flex", gap: 8 }}>
+        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "10px 22px", display: "flex", gap: 8, flexWrap: "wrap" }}>
           {TOOLS.map((t) => {
             const on = tool === t.id;
             return (
@@ -32,7 +35,7 @@ export default function App() {
           })}
         </div>
       </div>
-      {tool === "lbo" ? <LBOModel /> : <MergerModel />}
+      <Active />
     </>
   );
 }

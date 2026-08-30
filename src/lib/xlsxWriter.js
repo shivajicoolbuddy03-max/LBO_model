@@ -128,6 +128,12 @@ export function StyleBook() {
   };
 }
 
+// isFinite(null) is true in JS (null coerces to 0) — a null/undefined
+// cached value must still fall through to the 0 default here, or it
+// gets written as the literal 4-character string "null" inside <v>,
+// which corrupts the cell for any strict XML/XLSX reader.
+function finiteOr0(v) { return typeof v === "number" && isFinite(v) ? v : 0; }
+
 export function WSheet(name, opts) {
   const o = opts || {};
   return {
@@ -141,13 +147,13 @@ export function WSheet(name, opts) {
       return this;
     },
     txt(c, r, v, s) { return this.put(c, r, { t: "s", v: v === undefined || v === null ? "" : String(v), s }); },
-    num(c, r, v, s) { return this.put(c, r, { t: "n", v: isFinite(v) ? v : 0, s }); },
+    num(c, r, v, s) { return this.put(c, r, { t: "n", v: finiteOr0(v), s }); },
     // The <f> element must hold the formula WITHOUT a leading '=' per the
     // OOXML spec — callers pass Excel-style "=A1+B1" strings for
     // readability, so strip the leading sign here rather than at every
     // call site (a stray leading '=' otherwise gets written literally
     // into <f>, which corrupts the formula for strict readers).
-    fml(c, r, f, v, s) { return this.put(c, r, { t: "n", f: f.replace(/^=/, ""), v: isFinite(v) ? v : 0, s }); },
+    fml(c, r, f, v, s) { return this.put(c, r, { t: "n", f: f.replace(/^=/, ""), v: finiteOr0(v), s }); },
     fmlStr(c, r, f, v, s) { return this.put(c, r, { t: "str", f: f.replace(/^=/, ""), v: String(v), s }); },
     blank(c, r, s) { return this.put(c, r, { t: "b", s }); },
     band(c0, c1, r, s) { for (let c = c0; c <= c1; c++) if (!(this.rows[r] && this.rows[r][c])) this.blank(c, r, s); return this; },
