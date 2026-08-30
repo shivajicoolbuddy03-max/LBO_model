@@ -102,19 +102,23 @@ SHARE PRICE EXCEPTION: sharePrice (the current per-share market price) is quoted
 
 const COMPANY_SCHEMA = `{"jurisdiction":"","source":{"regulator":"","filingName":"","filingDate":""},"sharePrice":0,"dilutedSharesMktCap":0,"dilutedSharesEPS":0,"taxRate":0,"bookValueEquity":0,"existingGoodwill":0,"netPPE":0,"fy1":{"label":"","revenue":0,"cogs":0,"opex":0,"deprPPE":0,"amortIntangibles":0,"sbc":0,"interest":0},"fy2":{"label":"","revenue":0,"cogs":0,"opex":0,"deprPPE":0,"amortIntangibles":0,"sbc":0,"interest":0}}`;
 
-function buildPrompt(companyName) {
-  return `Use web search to find recent, publicly disclosed financial data for exactly one company: ${companyName}.
+function buildPrompt(companyName, profile) {
+  const jur = profile ? effectiveJurisdiction(profile) : "";
+  const idHint = profile && [profile.ticker && `Ticker: ${profile.ticker}`, profile.exchange && `Exchange: ${profile.exchange}`].filter(Boolean).join(", ");
+  const jurClause = jur
+    ? ` The user has specified this company's home-market jurisdiction as ${jur} — restrict your search and every citation to this jurisdiction's primary regulator filing system and the company's own investor-relations site; do not cite a different jurisdiction's regulator.`
+    : ` Identify this company's home-market jurisdiction and search that jurisdiction's primary regulator filing system specifically.`;
+  return `Use web search to find recent, publicly disclosed financial data for exactly one company: ${companyName}${idHint ? ` (${idHint})` : ""}.
 
 ${SOURCE_RULE}
-
-Identify this company's home-market jurisdiction, search that jurisdiction's primary regulator filing system specifically (e.g. site-restricted searches like "site:sec.gov ${companyName} 10-K", "site:hkexnews.hk", "site:nseindia.com" / "site:bseindia.com", "site:disclosure.edinet-fsa.go.jp", etc. as appropriate), and pull every figure from that primary filing. Do not use figures from finance data aggregators, stock screeners, broker/analyst notes, or news articles — those may only be used to locate the underlying filing, never as the source of a number. Use at most 3 web searches. If you cannot verify a figure against a primary filing after that, still provide your best estimate but say so honestly in filingName (e.g. "estimate — primary filing not located").
+${jurClause} Use site-restricted searches where useful (e.g. "site:sec.gov ${companyName} 10-K", "site:hkexnews.hk", "site:nseindia.com" / "site:bseindia.com", "site:disclosure.edinet-fsa.go.jp", etc. as appropriate), and pull every figure from that primary filing. Do not use figures from finance data aggregators, stock screeners, broker/analyst notes, or news articles — those may only be used to locate the underlying filing, never as the source of a number. Use at most 3 web searches. If you cannot verify a figure against a primary filing after that, still provide your best estimate but say so honestly in filingName (e.g. "estimate — primary filing not located").
 
 Return ONLY valid JSON — no markdown code fences, no commentary before, during, or after. Do not narrate your search process; search first, then emit the JSON object as your entire final answer, matching exactly this schema:
 ${COMPANY_SCHEMA}
 
 Rules:
 - Dollar figures in millions, share counts in thousands, rates as decimals (0.21 for 21%).
-- jurisdiction = the country/market whose regulator governs this company's filings (e.g. "United States", "India", "Hong Kong").
+- jurisdiction = the country/market whose regulator governs this company's filings (e.g. "United States", "India", "Hong Kong")${jur ? ` — this should match "${jur}" since the user specified it` : ""}.
 - source.regulator = which SOURCE_RULE regulator the figures came from. source.filingName = the specific filing, kept short (e.g. "FY2025 Form 10-K"). source.filingDate = filing/period end date.
 - "opex" = operating expenses excluding D&A and stock comp if broken out separately; otherwise best available operating expense line.
 - fy1 = most recent full fiscal year actuals per the primary filing (label it, e.g. "FY2025A"). fy2 = next fiscal year (consensus estimate if available, else your best projection; label e.g. "FY2026E").
@@ -123,9 +127,9 @@ Rules:
 - Keep all text fields brief — the JSON must fully close within the response.`;
 }
 
-async function fetchOneCompany(companyName) {
-  try { return await callAI("", buildPrompt(companyName), { useWebSearch: true, maxTokens: 3072 }); }
-  catch (e) { return await callAI("", buildPrompt(companyName), { useWebSearch: true, maxTokens: 4096 }); }
+async function fetchOneCompany(companyName, profile) {
+  try { return await callAI("", buildPrompt(companyName, profile), { useWebSearch: true, maxTokens: 3072 }); }
+  catch (e) { return await callAI("", buildPrompt(companyName, profile), { useWebSearch: true, maxTokens: 4096 }); }
 }
 
 /* ------------------------------------------------------------------ *
@@ -175,6 +179,59 @@ function InfoDot({ onClick, open }) {
     >
       i
     </button>
+  );
+}
+
+const JURISDICTIONS = [
+  { value: "United States", label: "United States — SEC EDGAR" },
+  { value: "Canada", label: "Canada — SEDAR+" },
+  { value: "India", label: "India — BSE / NSE" },
+  { value: "United Kingdom", label: "United Kingdom — LSE RNS" },
+  { value: "Japan", label: "Japan — EDINET" },
+  { value: "Hong Kong", label: "Hong Kong — HKEXnews" },
+  { value: "Australia", label: "Australia — ASX" },
+  { value: "Singapore", label: "Singapore — SGXNet" },
+  { value: "South Korea", label: "South Korea — DART" },
+  { value: "Brazil", label: "Brazil — CVM / B3" },
+  { value: "South Africa", label: "South Africa — JSE SENS" },
+  { value: "OTHER", label: "Other (specify)" },
+];
+function effectiveJurisdiction(profile) {
+  return profile.jurisdiction === "OTHER" ? (profile.otherJur || "") : profile.jurisdiction;
+}
+function TextField({ label, help, value, onChange, placeholder, type }) {
+  const [showHelp, setShowHelp] = useState(false);
+  return (
+    <label style={{ display: "block" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.3 }}>{label}</div>
+        {help && <InfoDot open={showHelp} onClick={(e) => { e.preventDefault(); setShowHelp((v) => !v); }} />}
+      </div>
+      <input
+        type={type || "text"}
+        value={value || ""}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ width: "100%", background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "9px 10px", color: TEXT, fontSize: 13, outline: "none" }}
+      />
+      {help && showHelp && <div style={{ fontSize: 10.5, color: MUTED, marginTop: 5, lineHeight: 1.45 }}>{help}</div>}
+    </label>
+  );
+}
+function SelectField({ label, help, value, onChange, options }) {
+  const [showHelp, setShowHelp] = useState(false);
+  return (
+    <label style={{ display: "block" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.3 }}>{label}</div>
+        {help && <InfoDot open={showHelp} onClick={(e) => { e.preventDefault(); setShowHelp((v) => !v); }} />}
+      </div>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ width: "100%", background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "9px 10px", color: TEXT, fontSize: 13, outline: "none" }}>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {help && showHelp && <div style={{ fontSize: 10.5, color: MUTED, marginTop: 5, lineHeight: 1.45 }}>{help}</div>}
+    </label>
   );
 }
 
@@ -811,13 +868,16 @@ export default function MergerModel() {
     setFetching(true);
     setFetchStatus({ err: false, text: `Searching for recent financials on ${acquirer} and ${target}… (running both lookups in parallel)` });
     try {
-      const [acqData, tgtData] = await Promise.all([fetchOneCompany(acquirer), fetchOneCompany(target)]);
+      const [acqData, tgtData] = await Promise.all([
+        fetchOneCompany(acquirer, state.buyer),
+        fetchOneCompany(target, state.seller),
+      ]);
       setState((prev) => {
         const next = { ...prev, acquirerName: acquirer, targetName: target };
         next.buyer = {
           ...prev.buyer,
           sharePrice: acqData.sharePrice, dilutedSharesMktCap: acqData.dilutedSharesMktCap, dilutedSharesEPS: acqData.dilutedSharesEPS,
-          taxRate: acqData.taxRate, jurisdiction: acqData.jurisdiction || "", source: acqData.source || {},
+          taxRate: acqData.taxRate, source: acqData.source || {},
           years: [
             { label: (acqData.fy1 && acqData.fy1.label) || "FY1", ...acqData.fy1 },
             { label: (acqData.fy2 && acqData.fy2.label) || "FY2", ...acqData.fy2 },
@@ -827,7 +887,7 @@ export default function MergerModel() {
           ...prev.seller,
           sharePrice: tgtData.sharePrice, dilutedSharesMktCap: tgtData.dilutedSharesMktCap, dilutedSharesEPS: tgtData.dilutedSharesEPS,
           taxRate: tgtData.taxRate, bookValueEquity: tgtData.bookValueEquity, existingGoodwill: tgtData.existingGoodwill, netPPE: tgtData.netPPE,
-          jurisdiction: tgtData.jurisdiction || "", source: tgtData.source || {},
+          source: tgtData.source || {},
           years: [
             { label: (tgtData.fy1 && tgtData.fy1.label) || "FY1", ...tgtData.fy1 },
             { label: (tgtData.fy2 && tgtData.fy2.label) || "FY2", ...tgtData.fy2 },
@@ -841,8 +901,8 @@ export default function MergerModel() {
       setFetchStatus({
         err: false,
         text: `Pulled estimates for ${acquirer} and ${target}. Review the fields below, then Run Analysis.`,
-        acquirerLine: srcLine("Acquirer", acqData.jurisdiction, acqData.source),
-        targetLine: srcLine("Target", tgtData.jurisdiction, tgtData.source),
+        acquirerLine: srcLine("Acquirer", effectiveJurisdiction(state.buyer), acqData.source),
+        targetLine: srcLine("Target", effectiveJurisdiction(state.seller), tgtData.source),
       });
     } catch (err) {
       setFetchStatus({ err: true, text: `Couldn't fetch financials automatically (${err.message}). Try again, or switch to Manual Financials mode.` });
@@ -957,6 +1017,29 @@ export default function MergerModel() {
               </button>
             )}
           </div>
+
+          <div style={{ marginTop: 20, marginBottom: 4 }}>
+            <div style={{ fontSize: 11, color: MUTED, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3, marginBottom: 12 }}>Company Setup — identity &amp; jurisdiction</div>
+            <div className="mm-cols2">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px" }}>
+                <TextField label="Ticker" help="Acquirer's stock ticker symbol. Helps the AI confirm it has the right company and exchange listing." value={state.buyer.ticker} onChange={(v) => setProfile("buyer", "ticker", v)} placeholder="e.g. AAPL" />
+                <TextField label="Exchange" help="Where the acquirer's shares are listed, e.g. NYSE, NASDAQ, LSE." value={state.buyer.exchange} onChange={(v) => setProfile("buyer", "exchange", v)} placeholder="e.g. NASDAQ" />
+                <SelectField label="Jurisdiction" help="Restricts AI sourcing for the acquirer to this jurisdiction's official regulator/exchange filing system — never third-party aggregators." value={state.buyer.jurisdiction} onChange={(v) => setProfile("buyer", "jurisdiction", v)} options={JURISDICTIONS} />
+                {state.buyer.jurisdiction === "OTHER"
+                  ? <TextField label="Other filing system" value={state.buyer.otherJur} onChange={(v) => setProfile("buyer", "otherJur", v)} placeholder="Name the regulator/exchange filing portal" />
+                  : <TextField label="Data As-Of Date" value={state.buyer.asOfDate} onChange={(v) => setProfile("buyer", "asOfDate", v)} type="date" />}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 12px" }}>
+                <TextField label="Ticker" help="Target's stock ticker symbol. Helps the AI confirm it has the right company and exchange listing." value={state.seller.ticker} onChange={(v) => setProfile("seller", "ticker", v)} placeholder="e.g. BB" />
+                <TextField label="Exchange" help="Where the target's shares are listed, e.g. NYSE, NASDAQ, LSE." value={state.seller.exchange} onChange={(v) => setProfile("seller", "exchange", v)} placeholder="e.g. NYSE" />
+                <SelectField label="Jurisdiction" help="Restricts AI sourcing for the target to this jurisdiction's official regulator/exchange filing system — never third-party aggregators." value={state.seller.jurisdiction} onChange={(v) => setProfile("seller", "jurisdiction", v)} options={JURISDICTIONS} />
+                {state.seller.jurisdiction === "OTHER"
+                  ? <TextField label="Other filing system" value={state.seller.otherJur} onChange={(v) => setProfile("seller", "otherJur", v)} placeholder="Name the regulator/exchange filing portal" />
+                  : <TextField label="Data As-Of Date" value={state.seller.asOfDate} onChange={(v) => setProfile("seller", "asOfDate", v)} type="date" />}
+              </div>
+            </div>
+          </div>
+
           {fetchStatus && (
             <div style={{ fontSize: 12.5, color: fetchStatus.err ? RED : MUTED, margin: "14px 0 0", lineHeight: 1.6 }}>
               {fetchStatus.text}

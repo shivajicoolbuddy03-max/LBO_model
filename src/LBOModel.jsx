@@ -13,6 +13,7 @@ import { loadApiKey, getApiKey, getSelectedProvider, loadSelectedProvider } from
 import { callAI, PROVIDERS } from "./lib/aiClient.js";
 import ApiKeyPanel from "./components/ApiKeyPanel.jsx";
 import { StyleBook, WSheet, writeXlsx, colName } from "./lib/xlsxWriter.js";
+import { JURISDICTIONS } from "./lib/sotpCalc.js";
 
 /* ------------------------------------------------------------------ *
  * UI DESIGN TOKENS
@@ -54,6 +55,12 @@ const PIPELINE = [
 function currencySymbol(code) {
   const map = { USD: "$", INR: "\u20b9", EUR: "\u20ac", GBP: "\u00a3", JPY: "\u00a5", CNY: "\u00a5", AUD: "A$", CAD: "C$" };
   return map[code] || (code ? code + " " : "$");
+}
+function effectiveJurisdiction(meta) {
+  return meta.jurisdiction === "OTHER" ? (meta.otherJur || "") : meta.jurisdiction;
+}
+function defaultCompanyMeta() {
+  return { ticker: "", exchange: "", currency: "", fy: "", asOfDate: new Date().toISOString().slice(0, 10), jurisdiction: JURISDICTIONS[0].value, otherJur: "" };
 }
 function fmtM(sym, v, dp) {
   if (v === null || v === undefined || !isFinite(v)) return "\u2014";
@@ -1327,6 +1334,43 @@ function InfoDot({ onClick, open }) {
     </button>
   );
 }
+function TextField({ label, help, value, onChange, placeholder, type, onKeyDown, disabled }) {
+  const [showHelp, setShowHelp] = useState(false);
+  return (
+    <label style={{ display: "block" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.3, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</div>
+        {help && <InfoDot open={showHelp} onClick={(e) => { e.preventDefault(); setShowHelp((v) => !v); }} />}
+      </div>
+      <input
+        type={type || "text"}
+        value={value || ""}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        disabled={disabled}
+        style={{ width: "100%", background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "9px 10px", color: TEXT, fontSize: 13, outline: "none" }}
+      />
+      {help && showHelp && <div style={{ fontSize: 10.5, color: MUTED, marginTop: 5, lineHeight: 1.45 }}>{help}</div>}
+    </label>
+  );
+}
+function SelectField({ label, help, value, onChange, options }) {
+  const [showHelp, setShowHelp] = useState(false);
+  return (
+    <label style={{ display: "block" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        <div style={{ fontSize: 11, color: MUTED, lineHeight: 1.3, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.3 }}>{label}</div>
+        {help && <InfoDot open={showHelp} onClick={(e) => { e.preventDefault(); setShowHelp((v) => !v); }} />}
+      </div>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ width: "100%", background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "9px 10px", color: TEXT, fontSize: 13, outline: "none" }}>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {help && showHelp && <div style={{ fontSize: 10.5, color: MUTED, marginTop: 5, lineHeight: 1.45 }}>{help}</div>}
+    </label>
+  );
+}
 function Field({ label, value, onChange, kind, hint, step, help }) {
   const toDisplay = (v) => (kind === "pct" ? Math.round(v * 10000) / 100 : v);
   const fromDisplay = (v) => (kind === "pct" ? v / 100 : v);
@@ -1441,6 +1485,8 @@ function Provenance({ research, agents }) {
  * ------------------------------------------------------------------ */
 export default function LBOModel() {
   const [company, setCompany] = useState("");
+  const [companyMeta, setCompanyMeta] = useState(defaultCompanyMeta);
+  const setMeta = (k, v) => setCompanyMeta((p) => Object.assign({}, p, { [k]: v }));
   const [mode, setMode] = useState("standard");
   const [phase, setPhase] = useState("idle");
   const [status, setStatus] = useState({});
@@ -1479,8 +1525,9 @@ export default function LBOModel() {
 
   function blankResearch(name) {
     return normResearch({
-      company_name: name, ticker: "—", exchange: "—", sector: "—", currency: "USD",
-      fiscal_year_end: "—", filing_type: "Manual entry", filing_period: "—",
+      company_name: name, ticker: companyMeta.ticker || "—", exchange: companyMeta.exchange || "—", sector: "—",
+      currency: companyMeta.currency || "USD",
+      fiscal_year_end: companyMeta.fy || "—", filing_type: "Manual entry", filing_period: "—",
       source_note: "All figures entered manually by the user, not sourced from a filing.",
       ebitda_basis: "Entered manually.",
     });
@@ -1520,7 +1567,12 @@ export default function LBOModel() {
     let key = null;
     try {
       key = "research"; setStat(key, "running");
-      const r = normResearch(await callClaude(SYSTEM.research, `Research this company for a potential leveraged buyout: ${company}`, { useWebSearch: true, maxTokens: 2000 }));
+      const jur = effectiveJurisdiction(companyMeta);
+      const researchSystem = jur
+        ? `${SYSTEM.research}\n\nJURISDICTION OVERRIDE: The user has specified this company's home market / primary filing system as: ${jur}. Restrict your search and every citation to this jurisdiction's official regulator/exchange filing system and the company's own investor-relations site — do not cite a filing from a different jurisdiction's regulator.`
+        : SYSTEM.research;
+      const idHint = [companyMeta.ticker && `Ticker: ${companyMeta.ticker}`, companyMeta.exchange && `Exchange: ${companyMeta.exchange}`, companyMeta.fy && `Fiscal year: ${companyMeta.fy}`].filter(Boolean).join(", ");
+      const r = normResearch(await callClaude(researchSystem, `Research this company for a potential leveraged buyout: ${company}${idHint ? ` (${idHint})` : ""}`, { useWebSearch: true, maxTokens: 2000 }));
       if (!(r.ltm_revenue_mm > 0) || !(r.ltm_ebitda_mm > 0)) {
         throw new Error(`Research returned revenue of ${r.ltm_revenue_mm} and EBITDA of ${r.ltm_ebitda_mm}. An LBO needs positive LTM EBITDA. Check the name, or pick a profitable target.`);
       }
@@ -1706,6 +1758,23 @@ export default function LBOModel() {
 
         {(phase === "idle" || phase === "running") && (
           <>
+            <Panel style={{ marginBottom: 20 }}>
+              <Eyebrow color={AMBER}>Company Setup</Eyebrow>
+              <div style={{ fontSize: 12.5, color: MUTED, margin: "6px 0 16px" }}>Identify the target and its home filing system. Jurisdiction restricts AI research sourcing to that market's official regulator/exchange filing system and the company's own IR site — never third-party aggregators.</div>
+              <div className="lbo-grid4">
+                <TextField label="Company Name" help="Enter the target's full legal or commonly-used name, as it appears on its own investor-relations site." value={company} onChange={setCompany} placeholder="e.g. Bharti Airtel" disabled={running} onKeyDown={(e) => e.key === "Enter" && (mode === "manual" ? startManual() : run())} />
+                <TextField label="Ticker" help="Stock ticker symbol, if listed. Helps the AI (and you) confirm it has the right company and exchange listing." value={companyMeta.ticker} onChange={(v) => setMeta("ticker", v)} placeholder="e.g. BHARTIARTL" />
+                <TextField label="Primary Exchange" help="Where the shares are listed, e.g. NYSE, NASDAQ, LSE, NSE, BSE. Used for the market-cap fallback source." value={companyMeta.exchange} onChange={(v) => setMeta("exchange", v)} placeholder="e.g. NSE" />
+                <TextField label="Currency" help="Reporting currency code, e.g. USD, INR, GBP, EUR. In Manual entry, every figure you type in should be in this currency." value={companyMeta.currency} onChange={(v) => setMeta("currency", v)} placeholder="USD, INR, GBP…" />
+                <TextField label="Fiscal Year End" help="The fiscal year being modeled, e.g. FY2025. Tells the AI which annual filing to treat as the current year." value={companyMeta.fy} onChange={(v) => setMeta("fy", v)} placeholder="e.g. FY2025" />
+                <TextField label="Data As-Of Date" value={companyMeta.asOfDate} onChange={(v) => setMeta("asOfDate", v)} type="date" />
+                <SelectField label="Jurisdiction (primary filing system)" help="Select the country/market where the company primarily files financial reports. This restricts AI sourcing to that jurisdiction's official regulator or exchange filing system." value={companyMeta.jurisdiction} onChange={(v) => setMeta("jurisdiction", v)} options={JURISDICTIONS} />
+                {companyMeta.jurisdiction === "OTHER" && (
+                  <TextField label="Other filing system" value={companyMeta.otherJur} onChange={(v) => setMeta("otherJur", v)} placeholder="Name the official regulator/exchange filing portal" />
+                )}
+              </div>
+            </Panel>
+
             <div className="modegrid" style={{ marginBottom: 16 }}>
               {[
                 { id: "standard", title: "Standard logic", body: "The six analysts pull the filings and set every assumption themselves. Fastest route to a first read on the deal.", Icon: Zap },
@@ -1731,14 +1800,6 @@ export default function LBOModel() {
             </div>
 
             <div style={{ display: "flex", gap: 10, marginBottom: 30, flexWrap: "wrap" }}>
-              <input
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && (mode === "manual" ? startManual() : run())}
-                placeholder={mode === "manual" ? "Company name, e.g. Bharti Airtel" : "Company name or ticker, e.g. Bharti Airtel"}
-                disabled={running}
-                style={{ flex: 1, minWidth: 230, background: PANEL, border: `1px solid ${LINE}`, borderRadius: 8, padding: "13px 15px", color: TEXT, fontSize: 14, outline: "none" }}
-              />
               <button onClick={() => (mode === "manual" ? startManual() : run())} disabled={running || !company.trim()}
                 style={{
                   display: "flex", alignItems: "center", gap: 8, background: running || !company.trim() ? PANEL2 : AMBER,
@@ -2173,13 +2234,15 @@ export default function LBOModel() {
         .g2c { display: grid; grid-template-columns: 1fr 1.15fr; gap: 14px; }
         .modegrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
         @media (max-width: 900px) { .modegrid { grid-template-columns: 1fr 1fr; } }
+        .lbo-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 16px; }
+        @media (max-width: 900px) { .lbo-grid4 { grid-template-columns: 1fr 1fr; } }
         .kpigrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
         .pipegrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(142px, 1fr)); gap: 9px; }
         .fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(178px, 1fr)); gap: 12px; }
         .auditgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
         @media (max-width: 1000px) { .kpigrid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 820px) {
-          .g2, .g2c, .modegrid { grid-template-columns: 1fr; }
+          .g2, .g2c, .modegrid, .lbo-grid4 { grid-template-columns: 1fr; }
           .kpigrid { grid-template-columns: repeat(2, 1fr); }
           .hero { font-size: 31px; }
         }

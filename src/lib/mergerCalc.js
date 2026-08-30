@@ -13,17 +13,19 @@ export function defaultMergerState() {
     revSynergyPct: 0.10, revSynergyCOGSPct: 0.50, opexSynergyPct: 0.10,
     ppeWriteUpPct: 0.10, deprPeriod: 8, pctAllocIntangibles: 0.20, amortPeriod: 5, dtlWriteDown: 43.265,
     buyer: {
+      ticker: "AAPL", exchange: "NASDAQ", asOfDate: new Date().toISOString().slice(0, 10),
       sharePrice: 192.06, dilutedSharesMktCap: 920525.62, dilutedSharesEPS: 907005.0, taxRate: 0.30,
-      jurisdiction: "United States", source: { regulator: "Illustrative template figures — not sourced from a live filing", filingName: "", filingDate: "" },
+      jurisdiction: "United States", otherJur: "", source: { regulator: "Illustrative template figures — not sourced from a live filing", filingName: "", filingDate: "" },
       years: [
         { label: "FY1E", revenue: 53631.25, cogs: 31655.42, opex: 5495.83, deprPPE: 917.50, amortIntangibles: 40.0, sbc: 887.50, interest: 379.25 },
         { label: "FY2E", revenue: 62748.56, cogs: 37036.84, opex: 6430.13, deprPPE: 1073.48, amortIntangibles: 37.0, sbc: 1038.38, interest: 477.65 },
       ],
     },
     seller: {
+      ticker: "BB", exchange: "NYSE", asOfDate: new Date().toISOString().slice(0, 10),
       sharePrice: 62.91, dilutedSharesMktCap: 572950.86, dilutedSharesEPS: 560000.0, taxRate: 0.28,
       bookValueEquity: 6986.62, existingGoodwill: 146.557, netPPE: 1737.40,
-      jurisdiction: "Canada", source: { regulator: "Illustrative template figures — not sourced from a live filing", filingName: "", filingDate: "" },
+      jurisdiction: "Canada", otherJur: "", source: { regulator: "Illustrative template figures — not sourced from a live filing", filingName: "", filingDate: "" },
       years: [
         { label: "FY1E", revenue: 17231.0, cogs: 9755.0, opex: 2697.53, deprPPE: 430.78, amortIntangibles: 359.0, sbc: 51.69, interest: 25.0 },
         { label: "FY2E", revenue: 20868.0, cogs: 11868.5, opex: 3258.96, deprPPE: 563.44, amortIntangibles: 433.0, sbc: 62.60, interest: 32.5 },
