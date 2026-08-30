@@ -443,7 +443,10 @@ function ApiKeyPanel({ hasKey, onSave, onClose }) {
  * EXCEL EXPORT — same raw-OOXML writer LBO Model uses, no CDN
  * dependency.
  * ------------------------------------------------------------------ */
-const XP = { title: "1F4E78", banner: "2E5395", white: "FFFFFF", input: "0000FA", bad: "9C0006", posFill: "6D7BC7", negFill: "9C3B3B" };
+const XP = {
+  title: "1F4E78", banner: "2E5395", white: "FFFFFF", dark: "1A1D2E", input: "0000FA", bad: "9C0006",
+  posFill: "6D7BC7", negFill: "9C3B3B", heatMin: "E6CECE", heatMid: "FFFFFF", heatMax: "DBDEF1",
+};
 const USDFMT = '$#,##0.0;[Red]($#,##0.0)';
 const USD2FMT = '$#,##0.00;[Red]($#,##0.00)';
 const PCTFMT = "0.0%";
@@ -516,7 +519,11 @@ function buildMergerWorkbook(d) {
   const accStyle = (v) => SB.s({ font: { b: true, color: v >= 0 ? XP.input : XP.bad }, numFmt: PCTFMT });
   const hdrPctCenter = SB.s({ font: { b: true, color: XP.input }, numFmt: "0%", align: { h: "center" } });
   const priceLbl = SB.s({ font: { b: true, color: XP.input }, numFmt: USDFMT });
-  const heatCell = (v) => SB.s({ font: { b: true, color: XP.white }, fill: v >= 0 ? XP.posFill : XP.negFill, numFmt: "0.0%", align: { h: "center" } });
+  // Heatmap cells carry no per-cell fill — a live colorScale conditional
+  // format (added after the matrices are built) owns the background, so
+  // it recomputes in Excel instead of being frozen at export time. Text
+  // stays a plain dark color since every stop in that scale is pale.
+  const heatCellStyle = SB.s({ font: { b: true, color: XP.dark }, numFmt: "0.0%", align: { h: "center" } });
 
   // twoCol writes the same formula shape into columns B (FY1) and C (FY2)
   function twoCol(ws, row, tmpl, valB, valC, style) {
@@ -784,7 +791,7 @@ function buildMergerWorkbook(d) {
       const synCell = `${col}$${OPEX_HDR}`;
       const preTax = `(${fixed.gp}-(${fixed.opex}-${synCell}*${fixed.tgtOpex})-${fixed.deprPPE}-${fixed.deprWU}-${fixed.amort}-${g}-${fixed.sbc}+${fixed.interest}+${h}+${i})`;
       const formula = `=${preTax}*(1-${fixed.taxRate})/${k}/${fixed.eps}-1`;
-      ws4.fml(ci + 1, opexRow, formula, v, heatCell(v));
+      ws4.fml(ci + 1, opexRow, formula, v, heatCellStyle);
     });
   }
   // matrix cells: revenue-synergy matrix (col varies revSynergyPct, gross profit varies)
@@ -798,9 +805,20 @@ function buildMergerWorkbook(d) {
       const gp = `(${fixed.rev}+${revSyn}-${fixed.cogs}-${fixed.revSynCogsPct}*(${revSyn}))`;
       const preTax = `(${gp}-(${fixed.opex}-${fixed.opexSynPctBase}*${fixed.tgtOpex})-${fixed.deprPPE}-${fixed.deprWU}-${fixed.amort}-${g}-${fixed.sbc}+${fixed.interest}+${h}+${i})`;
       const formula = `=${preTax}*(1-${fixed.taxRate})/${k}/${fixed.eps}-1`;
-      ws4.fml(ci + 1, revRow, formula, v, heatCell(v));
+      ws4.fml(ci + 1, revRow, formula, v, heatCellStyle);
     });
   }
+
+  ws4.colorScale(1, OPEX_R0, 9, OPEX_R0 + 9, [
+    { type: "min", color: XP.heatMin },
+    { type: "num", val: 0, color: XP.heatMid },
+    { type: "max", color: XP.heatMax },
+  ]);
+  ws4.colorScale(1, REV_R0, 9, REV_R0 + 9, [
+    { type: "min", color: XP.heatMin },
+    { type: "num", val: 0, color: XP.heatMid },
+    { type: "max", color: XP.heatMax },
+  ]);
 
   return writeXlsx([ws1, ws2, ws3, ws4], SB);
 }

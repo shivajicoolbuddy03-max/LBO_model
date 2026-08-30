@@ -131,7 +131,7 @@ export function StyleBook() {
 export function WSheet(name, opts) {
   const o = opts || {};
   return {
-    name, tabColor: o.tabColor, freeze: o.freeze, cols: o.cols || [], merges: [],
+    name, tabColor: o.tabColor, freeze: o.freeze, cols: o.cols || [], merges: [], condFormats: [],
     rows: {}, heights: {}, maxCol: 0, maxRow: 0,
     put(c, r, cell) {
       if (!this.rows[r]) this.rows[r] = {};
@@ -153,6 +153,15 @@ export function WSheet(name, opts) {
     band(c0, c1, r, s) { for (let c = c0; c <= c1; c++) if (!(this.rows[r] && this.rows[r][c])) this.blank(c, r, s); return this; },
     merge(c0, r0, c1, r1) { this.merges.push(`${colName(c0)}${r0}:${colName(c1)}${r1}`); return this; },
     height(r, h) { this.heights[r] = h; return this; },
+    // 2- or 3-stop color scale conditional formatting over a range, so
+    // cell fills recompute live in Excel from the cells' own values
+    // instead of being baked in at export time. stops: [{type,val,color}]
+    // where type is "min" | "max" | "num" | "percentile" (val required
+    // for "num"/"percentile") and color is a 6-hex RGB string.
+    colorScale(c0, r0, c1, r1, stops) {
+      this.condFormats.push({ sqref: `${colName(c0)}${r0}:${colName(c1)}${r1}`, stops });
+      return this;
+    },
     xml() {
       const rowNums = Object.keys(this.rows).map(Number).sort((a, b) => a - b);
       const body = rowNums.map((r) => {
@@ -183,6 +192,11 @@ export function WSheet(name, opts) {
         `<dimension ref="${dim}"/><sheetViews><sheetView showGridLines="0" workbookViewId="0">${pane}</sheetView></sheetViews>` +
         `<sheetFormatPr defaultRowHeight="15"/>` + colsXml + `<sheetData>${body}</sheetData>` +
         (this.merges.length ? `<mergeCells count="${this.merges.length}">${this.merges.map((m) => `<mergeCell ref="${m}"/>`).join("")}</mergeCells>` : "") +
+        this.condFormats.map((cf, i) => {
+          const cfvo = cf.stops.map((s) => `<cfvo type="${s.type}"${s.val !== undefined ? ` val="${s.val}"` : ""}/>`).join("");
+          const colors = cf.stops.map((s) => `<color rgb="FF${s.color}"/>`).join("");
+          return `<conditionalFormatting sqref="${cf.sqref}"><cfRule type="colorScale" priority="${i + 1}"><colorScale>${cfvo}${colors}</colorScale></cfRule></conditionalFormatting>`;
+        }).join("") +
         `<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/></worksheet>`;
     },
   };
