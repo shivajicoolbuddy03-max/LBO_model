@@ -1,15 +1,16 @@
 import React, { useEffect, useState } from "react";
 import {
-  Wand2, PencilLine, KeyRound, X, CheckCircle2, Loader2, Play, RotateCcw,
+  Wand2, PencilLine, KeyRound, Loader2, Play, RotateCcw,
   FileSpreadsheet, TrendingUp, TrendingDown,
 } from "lucide-react";
 import {
   INK, PANEL, PANEL2, LINE, AMBER, AMBER_DIM, TEAL, GREEN, RED, GOLD, TEXT, MUTED, FAINT, mono, serif, ghostBtn,
 } from "./lib/theme.js";
-import { loadApiKey, saveApiKey, getApiKey } from "./lib/apiKey.js";
-import { callClaude } from "./lib/anthropicClient.js";
+import { loadApiKey, getApiKey, getSelectedProvider, loadSelectedProvider } from "./lib/apiKey.js";
+import { callAI, PROVIDERS } from "./lib/aiClient.js";
 import { defaultMergerState, computeDeal } from "./lib/mergerCalc.js";
 import { StyleBook, WSheet, writeXlsx, colName } from "./lib/xlsxWriter.js";
+import ApiKeyPanel from "./components/ApiKeyPanel.jsx";
 
 /* ------------------------------------------------------------------ *
  * FORMATTERS
@@ -121,8 +122,8 @@ Rules:
 }
 
 async function fetchOneCompany(companyName) {
-  try { return await callClaude("", buildPrompt(companyName), { useWebSearch: true, maxTokens: 3072 }); }
-  catch (e) { return await callClaude("", buildPrompt(companyName), { useWebSearch: true, maxTokens: 4096 }); }
+  try { return await callAI("", buildPrompt(companyName), { useWebSearch: true, maxTokens: 3072 }); }
+  catch (e) { return await callAI("", buildPrompt(companyName), { useWebSearch: true, maxTokens: 4096 }); }
 }
 
 /* ------------------------------------------------------------------ *
@@ -377,64 +378,6 @@ function Heatmap({ matrix, priceLevels, synergyLevels }) {
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ *
- * API KEY PANEL — same storage slot as LBO Model, so one key serves
- * both tools.
- * ------------------------------------------------------------------ */
-function ApiKeyPanel({ hasKey, onSave, onClose }) {
-  const [draft, setDraft] = useState("");
-  const [revealed, setRevealed] = useState(false);
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 50, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "14vh 16px 16px" }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: PANEL, border: `1px solid ${LINE}`, borderRadius: 12, padding: 20, width: "100%", maxWidth: 420 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <KeyRound size={16} color={AMBER} />
-            <span style={{ fontSize: 15, fontWeight: 700 }}>Anthropic API key</span>
-          </div>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: MUTED, cursor: "pointer", padding: 4 }}>
-            <X size={16} />
-          </button>
-        </div>
-        <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.5, margin: "8px 0 14px" }}>
-          The AI financials lookup calls the Anthropic API straight from this device, so it needs your own key — the same one used by the LBO Model tool. Stored only in this app's local storage, never sent anywhere but api.anthropic.com. Get one at{" "}
-          <span style={{ color: TEAL }}>console.anthropic.com</span>. No key at all is fine too — use Manual Financials mode instead.
-        </div>
-        {hasKey && !revealed ? (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ flex: 1, background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "10px 12px", fontSize: 13, color: GREEN, ...mono }}>
-              <CheckCircle2 size={13} style={{ verticalAlign: -2, marginRight: 6 }} />Key saved on this device
-            </div>
-            <button onClick={() => setRevealed(true)} style={ghostBtn}>Change</button>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input
-              type="password"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="sk-ant-…"
-              autoFocus
-              style={{ background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "10px 12px", color: TEXT, fontSize: 13, outline: "none", ...mono }}
-            />
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              {hasKey && (
-                <button onClick={() => { onSave(""); setDraft(""); setRevealed(false); }} style={ghostBtn}>Remove key</button>
-              )}
-              <button
-                onClick={() => { if (draft.trim()) { onSave(draft.trim()); setDraft(""); setRevealed(false); onClose(); } }}
-                disabled={!draft.trim()}
-                style={{ background: draft.trim() ? AMBER : PANEL2, color: draft.trim() ? "#fff" : MUTED, border: "none", borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: draft.trim() ? "pointer" : "default" }}>
-                Save key
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -837,10 +780,16 @@ export default function MergerModel() {
   });
   const [tab, setTab] = useState("buyer");
   const [hasKey, setHasKey] = useState(false);
+  const [provider, setProvider] = useState("anthropic");
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   const [exportError, setExportError] = useState("");
 
-  useEffect(() => { setHasKey(!!loadApiKey()); }, []);
+  function refreshKeyState() {
+    const p = loadSelectedProvider();
+    setProvider(p);
+    setHasKey(!!loadApiKey(p));
+  }
+  useEffect(() => { refreshKeyState(); }, []);
 
   const setAssumption = (k, v) => setState((p) => ({ ...p, [k]: v }));
   const setProfile = (side, k, v) => setState((p) => ({ ...p, [side]: { ...p[side], [k]: v } }));
@@ -853,8 +802,8 @@ export default function MergerModel() {
   async function handleFetch() {
     const acquirer = state.acquirerName.trim(), target = state.targetName.trim();
     if (!acquirer || !target) return;
-    if (!getApiKey()) {
-      setFetchStatus({ err: true, text: "Add your Anthropic API key (key icon, top right) to run AI research, or switch to Manual Financials mode to build the model yourself with no key." });
+    if (!getApiKey(getSelectedProvider())) {
+      setFetchStatus({ err: true, text: `Add your ${PROVIDERS[getSelectedProvider()].label} API key (key icon, top right) to run AI research, or switch to Manual Financials mode to build the model yourself with no key.` });
       return;
     }
     setFetching(true);
@@ -949,13 +898,13 @@ export default function MergerModel() {
               {"● LIVE · ACCRETION / DILUTION"}
             </div>
             <button onClick={() => setShowKeyPanel(true)} style={ghostBtn}>
-              <KeyRound size={13} /> {hasKey ? "Key set" : "Add key"}
+              <KeyRound size={13} /> {hasKey ? `${PROVIDERS[provider].short} key set` : "Add AI key"}
             </button>
           </div>
         </div>
 
         {showKeyPanel && (
-          <ApiKeyPanel hasKey={hasKey} onSave={(k) => { saveApiKey(k); setHasKey(!!k); }} onClose={() => setShowKeyPanel(false)} />
+          <ApiKeyPanel onChange={refreshKeyState} onClose={() => setShowKeyPanel(false)} />
         )}
 
         <div className="mm-grid4" style={{ marginBottom: 28 }}>

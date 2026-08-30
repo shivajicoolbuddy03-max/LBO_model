@@ -1,26 +1,62 @@
 /* ------------------------------------------------------------------ *
- * Shared Anthropic API key store.
- * Both LBO Model and M&A Merger Model call the Anthropic API straight
- * from the device, so they share one key under one storage slot: set
- * it once in either tool and both pick it up.
+ * Shared multi-provider API key store.
+ * All three tools (LBO Model, M&A Merger Model, SOTP Valuation
+ * Builder) call an AI provider straight from the device, so they
+ * share one set of keys — one per provider — and one "currently
+ * selected provider" setting. Set a key once in any tool and every
+ * tool picks it up.
  * ------------------------------------------------------------------ */
-export const API_KEY_STORAGE = "lbo_anthropic_api_key";
+const LEGACY_KEY_STORAGE = "lbo_anthropic_api_key"; // pre-multi-provider single-key slot
+const KEY_STORAGE_PREFIX = "lbo_api_key__";
+const PROVIDER_STORAGE = "lbo_ai_provider";
 
-let currentApiKey = "";
+const currentKeys = {}; // providerId -> key, in-memory cache
+let currentProvider = "anthropic";
 
-export function loadApiKey() {
-  try { currentApiKey = localStorage.getItem(API_KEY_STORAGE) || ""; } catch (e) { currentApiKey = ""; }
-  return currentApiKey;
+function keySlot(provider) { return KEY_STORAGE_PREFIX + provider; }
+
+export function loadApiKey(provider) {
+  try {
+    let v = localStorage.getItem(keySlot(provider)) || "";
+    if (!v && provider === "anthropic") {
+      // migrate a key saved before multi-provider support existed
+      const legacy = localStorage.getItem(LEGACY_KEY_STORAGE);
+      if (legacy) { v = legacy; try { localStorage.setItem(keySlot("anthropic"), legacy); } catch (e) {} }
+    }
+    currentKeys[provider] = v;
+    return v;
+  } catch (e) {
+    currentKeys[provider] = "";
+    return "";
+  }
 }
 
-export function saveApiKey(key) {
-  currentApiKey = key || "";
+export function saveApiKey(provider, key) {
+  currentKeys[provider] = key || "";
   try {
-    if (currentApiKey) localStorage.setItem(API_KEY_STORAGE, currentApiKey);
-    else localStorage.removeItem(API_KEY_STORAGE);
+    if (currentKeys[provider]) localStorage.setItem(keySlot(provider), currentKeys[provider]);
+    else localStorage.removeItem(keySlot(provider));
   } catch (e) { /* localStorage unavailable, key still held in memory for this session */ }
 }
 
-export function getApiKey() {
-  return currentApiKey;
+export function getApiKey(provider) {
+  return currentKeys[provider] || "";
+}
+
+export function loadSelectedProvider() {
+  try {
+    currentProvider = localStorage.getItem(PROVIDER_STORAGE) || "anthropic";
+  } catch (e) {
+    currentProvider = "anthropic";
+  }
+  return currentProvider;
+}
+
+export function saveSelectedProvider(provider) {
+  currentProvider = provider;
+  try { localStorage.setItem(PROVIDER_STORAGE, provider); } catch (e) {}
+}
+
+export function getSelectedProvider() {
+  return currentProvider;
 }

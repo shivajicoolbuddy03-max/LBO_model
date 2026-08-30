@@ -7,33 +7,11 @@ import {
   Search, Building2, Banknote, Target, Activity, ShieldAlert, LogOut,
   Loader2, CheckCircle2, Circle, AlertCircle, AlertTriangle, Download, Play,
   Info, Sliders, Zap, RotateCcw, FileSpreadsheet, ArrowRight, Check,
-  FileText, ExternalLink, BadgeCheck, KeyRound, PencilLine, X,
+  FileText, ExternalLink, BadgeCheck, KeyRound, PencilLine,
 } from "lucide-react";
-
-const API_MODEL = "claude-sonnet-4-6";
-
-/* ------------------------------------------------------------------ *
- * API KEY STORE
- * The app calls the Anthropic API directly from the device, so it needs
- * the user's own key. Kept as a module-level value rather than React
- * state so every plain function below (callOnce, callClaude) can read
- * it without threading a prop through the whole agent pipeline. It is
- * persisted only to on-device localStorage, never sent anywhere but
- * api.anthropic.com.
- * ------------------------------------------------------------------ */
-const API_KEY_STORAGE = "lbo_anthropic_api_key";
-let currentApiKey = "";
-function loadApiKey() {
-  try { currentApiKey = localStorage.getItem(API_KEY_STORAGE) || ""; } catch (e) { currentApiKey = ""; }
-  return currentApiKey;
-}
-function saveApiKey(key) {
-  currentApiKey = key || "";
-  try {
-    if (currentApiKey) localStorage.setItem(API_KEY_STORAGE, currentApiKey);
-    else localStorage.removeItem(API_KEY_STORAGE);
-  } catch (e) { /* localStorage unavailable, key still held in memory for this session */ }
-}
+import { loadApiKey, getApiKey, getSelectedProvider, loadSelectedProvider } from "./lib/apiKey.js";
+import { callAI, PROVIDERS } from "./lib/aiClient.js";
+import ApiKeyPanel from "./components/ApiKeyPanel.jsx";
 
 /* ------------------------------------------------------------------ *
  * UI DESIGN TOKENS
@@ -259,77 +237,13 @@ function houseDefaults(r) {
 }
 
 /* ------------------------------------------------------------------ *
- * API PLUMBING
+ * API PLUMBING — delegates to the shared multi-provider client
+ * (src/lib/aiClient.js), which resolves whichever provider is
+ * currently selected (Anthropic / OpenAI / Gemini) and that
+ * provider's key. Kept as a local alias so the six call sites below
+ * didn't need touching.
  * ------------------------------------------------------------------ */
-function stripFences(t) { return t.replace(/```json\s*|```\s*/g, "").trim(); }
-
-function extractJson(text) {
-  const t = stripFences(text);
-  for (let i = 0; i < t.length; i++) {
-    if (t[i] !== "{") continue;
-    let depth = 0, inStr = false, esc2 = false;
-    for (let j = i; j < t.length; j++) {
-      const ch = t[j];
-      if (inStr) {
-        if (esc2) esc2 = false;
-        else if (ch === "\\") esc2 = true;
-        else if (ch === '"') inStr = false;
-        continue;
-      }
-      if (ch === '"') inStr = true;
-      else if (ch === "{") depth++;
-      else if (ch === "}") {
-        depth--;
-        if (depth === 0) { try { return JSON.parse(t.slice(i, j + 1)); } catch (e) { break; } }
-      }
-    }
-  }
-  return null;
-}
-
-async function callOnce(system, userContent, useWebSearch, maxTokens) {
-  if (!currentApiKey) throw new Error("No Anthropic API key is set. Add one from the key icon at the top of the page, or switch to Manual entry mode to build the model without one.");
-  const body = { model: API_MODEL, max_tokens: maxTokens || 1000, system, messages: [{ role: "user", content: userContent }] };
-  if (useWebSearch) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": currentApiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (data.error) {
-    if (res.status === 401) throw new Error("The Anthropic API key was rejected. Check it in the key settings and try again.");
-    throw new Error(data.error.message || "API error");
-  }
-  const blocks = (data.content || []).filter((b) => b.type === "text").map((b) => b.text || "");
-  for (let i = blocks.length - 1; i >= 0; i--) {
-    const parsed = extractJson(blocks[i]);
-    if (parsed) return parsed;
-  }
-  const joined = extractJson(blocks.join("\n"));
-  if (joined) return joined;
-  if (data.stop_reason === "max_tokens") throw new Error("The reply hit the token limit before the JSON closed. Try a more specific company name.");
-  throw new Error("No valid JSON object found in the model response.");
-}
-
-async function callClaude(system, userContent, opts) {
-  const useWebSearch = opts && opts.useWebSearch;
-  const maxTokens = (opts && opts.maxTokens) || 1000;
-  let lastErr = null;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const msg = attempt === 0 ? userContent
-        : userContent + "\n\nYour previous reply was not valid JSON. Return ONLY the JSON object, no prose, no fences.";
-      return await callOnce(system, msg, useWebSearch, maxTokens);
-    } catch (e) { lastErr = e; }
-  }
-  throw lastErr;
-}
+const callClaude = callAI;
 
 /* ------------------------------------------------------------------ *
  * MODEL ENGINE
@@ -1712,71 +1626,6 @@ function Provenance({ research, agents }) {
   );
 }
 
-function ApiKeyPanel({ hasKey, onSave, onClose }) {
-  const [draft, setDraft] = useState("");
-  const [revealed, setRevealed] = useState(false);
-  return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 50,
-      display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "14vh 16px 16px",
-    }} onClick={onClose}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        background: PANEL, border: `1px solid ${LINE}`, borderRadius: 12, padding: 20, width: "100%", maxWidth: 420,
-      }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <KeyRound size={16} color={AMBER} />
-            <span style={{ fontSize: 15, fontWeight: 700 }}>Anthropic API key</span>
-          </div>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", color: MUTED, cursor: "pointer", padding: 4 }}>
-            <X size={16} />
-          </button>
-        </div>
-        <div style={{ fontSize: 12, color: MUTED, lineHeight: 1.5, margin: "8px 0 14px" }}>
-          The AI research and structuring agents call the Anthropic API straight from this device, so they need your own key.
-          Stored only in this app's local storage, never sent anywhere but api.anthropic.com. Get one at{" "}
-          <span style={{ color: TEAL }}>console.anthropic.com</span>. No key at all is fine too — use Manual entry mode instead.
-        </div>
-        {hasKey && !revealed ? (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ flex: 1, background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "10px 12px", fontSize: 13, color: GREEN, ...mono }}>
-              <CheckCircle2 size={13} style={{ verticalAlign: -2, marginRight: 6 }} />Key saved on this device
-            </div>
-            <button onClick={() => setRevealed(true)} style={ghostBtn}>Change</button>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            <input
-              type="password"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="sk-ant-…"
-              autoFocus
-              style={{ background: INK, border: `1px solid ${LINE}`, borderRadius: 7, padding: "10px 12px", color: TEXT, fontSize: 13, outline: "none", ...mono }}
-            />
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              {hasKey && (
-                <button onClick={() => { onSave(""); setDraft(""); setRevealed(false); }} style={ghostBtn}>
-                  Remove key
-                </button>
-              )}
-              <button
-                onClick={() => { if (draft.trim()) { onSave(draft.trim()); setDraft(""); setRevealed(false); onClose(); } }}
-                disabled={!draft.trim()}
-                style={{
-                  background: draft.trim() ? AMBER : PANEL2, color: draft.trim() ? "#fff" : MUTED, border: "none",
-                  borderRadius: 8, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: draft.trim() ? "pointer" : "default",
-                }}>
-                Save key
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------------ *
  * MAIN
  * ------------------------------------------------------------------ */
@@ -1798,11 +1647,17 @@ export default function LBOModel() {
   const [fileUrl, setFileUrl] = useState(null);
   const [buildNote, setBuildNote] = useState(null);
   const [hasKey, setHasKey] = useState(false);
+  const [provider, setProvider] = useState("anthropic");
   const [showKeyPanel, setShowKeyPanel] = useState(false);
   const proposalRef = useRef(null);
 
+  function refreshKeyState() {
+    const p = loadSelectedProvider();
+    setProvider(p);
+    setHasKey(!!loadApiKey(p));
+  }
   useEffect(() => {
-    setHasKey(!!loadApiKey());
+    refreshKeyState();
   }, []);
 
   const running = phase === "running";
@@ -1844,7 +1699,7 @@ export default function LBOModel() {
   async function run() {
     if (!company.trim() || running) return;
     if (!hasKey) {
-      setError("Add your Anthropic API key (key icon, top right) to run AI research, or switch to Manual entry to build the model yourself with no key.");
+      setError(`Add your ${PROVIDERS[provider].label} API key (key icon, top right) to run AI research, or switch to Manual entry to build the model yourself with no key.`);
       return;
     }
     setPhase("running"); setError(null); setBuildNote(null);
@@ -1905,7 +1760,7 @@ export default function LBOModel() {
       setModel(m); setAssumptions(next); setStat(key, "done");
       setLogLine(key, `${fmtX(m.base.moic)} MOIC \u00b7 ${fmtPct(m.base.irr)} IRR`);
 
-      if (!currentApiKey) {
+      if (!getApiKey(getSelectedProvider())) {
         const a5 = normA5({});
         const a6 = normA6({});
         setAgents((p) => Object.assign({}, p, { a5, a6 }));
@@ -2025,22 +1880,18 @@ export default function LBOModel() {
             <div style={{ border: `1px solid ${LINE}`, borderRadius: 20, padding: "6px 13px", ...mono, fontSize: 10, letterSpacing: 1, color: MUTED, whiteSpace: "nowrap" }}>
               {"\u25cf LIVE \u00b7 MULTI-AGENT"}
             </div>
-            <button onClick={() => setShowKeyPanel(true)} title="Anthropic API key" style={{
+            <button onClick={() => setShowKeyPanel(true)} title="AI provider & API key" style={{
               display: "flex", alignItems: "center", gap: 6, background: hasKey ? AMBER_DIM : PANEL,
               border: `1px solid ${hasKey ? AMBER : LINE}`, borderRadius: 20, padding: "6px 12px",
               color: hasKey ? AMBER : MUTED, fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
             }}>
-              <KeyRound size={13} /> {hasKey ? "Key set" : "Add key"}
+              <KeyRound size={13} /> {hasKey ? `${PROVIDERS[provider].short} key set` : "Add AI key"}
             </button>
           </div>
         </div>
 
         {showKeyPanel && (
-          <ApiKeyPanel
-            hasKey={hasKey}
-            onSave={(k) => { saveApiKey(k); setHasKey(!!k); }}
-            onClose={() => setShowKeyPanel(false)}
-          />
+          <ApiKeyPanel onChange={refreshKeyState} onClose={() => setShowKeyPanel(false)} />
         )}
 
         {(phase === "idle" || phase === "running") && (
