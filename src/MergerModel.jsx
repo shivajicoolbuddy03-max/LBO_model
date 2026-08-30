@@ -96,7 +96,9 @@ const SOURCE_RULE = `SOURCE_RULE — primary regulator by jurisdiction (use ONLY
 - South Korea → DART
 - Brazil → CVM / B3
 - South Africa → JSE SENS
-- Any other jurisdiction → that market's primary securities regulator's official filing system (never a data aggregator)`;
+- Any other jurisdiction → that market's primary securities regulator's official filing system (never a data aggregator)
+
+SHARE PRICE EXCEPTION: sharePrice (the current per-share market price) is quoted continuously by the exchange itself, not disclosed in a periodic filing, so it is exempt from the aggregator ban above. Source it, in order of preference: (1) the exchange's own quote page (e.g. nseindia.com, hkex.com.hk, londonstockexchange.com), (2) the company's investor-relations "stock info" page, (3) only if neither is reachable, a reputable third-party quote service — Bloomberg, Yahoo Finance, or Google Finance — clearly marked as such in source.filingName (e.g. "Yahoo Finance quote, third-party"). This exception applies to sharePrice only; every other field must still come from a primary regulator filing.`;
 
 const COMPANY_SCHEMA = `{"jurisdiction":"","source":{"regulator":"","filingName":"","filingDate":""},"sharePrice":0,"dilutedSharesMktCap":0,"dilutedSharesEPS":0,"taxRate":0,"bookValueEquity":0,"existingGoodwill":0,"netPPE":0,"fy1":{"label":"","revenue":0,"cogs":0,"opex":0,"deprPPE":0,"amortIntangibles":0,"sbc":0,"interest":0},"fy2":{"label":"","revenue":0,"cogs":0,"opex":0,"deprPPE":0,"amortIntangibles":0,"sbc":0,"interest":0}}`;
 
